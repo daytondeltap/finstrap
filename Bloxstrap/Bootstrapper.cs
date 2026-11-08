@@ -829,8 +829,16 @@ namespace Bloxstrap
 #if !DEBUG_UPDATER
             var releaseInfo = await App.GetLatestRelease();
 
-            if (releaseInfo is null)
+            if (releaseInfo is null || !Version.TryParse(releaseInfo.TagName.TrimStart('v'), out var releaseVersion))
                 return false;
+
+            var asset = releaseInfo.Assets?.FirstOrDefault(item =>
+                string.Equals(item.Name, "Finstrap.exe", StringComparison.OrdinalIgnoreCase));
+            if (asset is null)
+            {
+                App.Logger.WriteLine(LOG_IDENT, "The latest release has no Finstrap.exe asset.");
+                return false;
+            }
 
             var versionComparison = Utilities.CompareVersions(App.Version, releaseInfo.TagName);
 
@@ -860,20 +868,22 @@ namespace Bloxstrap
 
                 File.Copy(Paths.Process, downloadLocation, true);
 #else
-                var asset = releaseInfo.Assets![0];
+                string updateDirectory = Path.Combine(Paths.TempUpdates, releaseVersion.ToString());
+                string downloadLocation = Path.Combine(updateDirectory, "Finstrap.exe");
 
-                string downloadLocation = Path.Combine(Paths.TempUpdates, asset.Name);
-
-                Directory.CreateDirectory(Paths.TempUpdates);
+                Directory.CreateDirectory(updateDirectory);
 
                 App.Logger.WriteLine(LOG_IDENT, $"Downloading {releaseInfo.TagName}...");
                 
                 if (!File.Exists(downloadLocation))
                 {
-                    var response = await App.HttpClient.GetAsync(asset.BrowserDownloadUrl);
+                    using var response = await App.HttpClient.GetAsync(asset.BrowserDownloadUrl);
+                    response.EnsureSuccessStatusCode();
 
-                    await using var fileStream = new FileStream(downloadLocation, FileMode.OpenOrCreate, FileAccess.Write);
-                    await response.Content.CopyToAsync(fileStream);
+                    string partial = downloadLocation + ".part";
+                    await using (var fileStream = File.Create(partial))
+                        await response.Content.CopyToAsync(fileStream);
+                    File.Move(partial, downloadLocation, overwrite: true);
                 }
 #endif
 
