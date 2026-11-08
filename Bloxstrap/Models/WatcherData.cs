@@ -3,6 +3,8 @@
     internal class WatcherData
     {
         public int ProcessId { get; set; }
+        public bool MultiInstance { get; set; }
+        public long ProcessStartTimeUtc { get; set; }
 
         public string? LogFile { get; set; }
 

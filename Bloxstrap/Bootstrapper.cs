@@ -11,6 +11,8 @@
 #warning "Automatic updater debugging is enabled"
 #endif
 
+using Bloxstrap.Integrations;
+
 using System.ComponentModel;
 using System.Data;
 using System.Windows;
@@ -74,9 +76,9 @@ namespace Bloxstrap
         public bool IsStudioLaunch => _launchMode != LaunchMode.Player;
 
         public string MutexName => $"{MutexNamePrefix}-{_launchMode}";
-        public string BackgroundUpdaterMutexName => $"Bloxstrap-BackgroundUpdater-{_launchMode}";
+        public string BackgroundUpdaterMutexName => $"{App.ProjectName}-BackgroundUpdater-{_launchMode}";
 
-        public string MutexNamePrefix { get; set; } = "Bloxstrap-Bootstrapper";
+        public string MutexNamePrefix { get; set; } = $"{App.ProjectName}-Bootstrapper";
         public bool QuitIfMutexExists { get; set; } = false;
         #endregion
 
@@ -560,6 +562,11 @@ namespace Bloxstrap
 
             SetStatus(Strings.Bootstrapper_Status_Starting);
 
+            bool multiInstance = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
+            using var multiLease = multiInstance ? TryAcquireMultiInstanceLease() : null;
+            if (multiInstance && multiLease is null)
+                return;
+
             var startInfo = new ProcessStartInfo()
             {
                 FileName = AppData.ExecutablePath,
@@ -588,27 +595,33 @@ namespace Bloxstrap
             if (!Directory.Exists(rbxLogDir))
                 Directory.CreateDirectory(rbxLogDir);
 
-            var logWatcher = new FileSystemWatcher()
+            using var logCreatedEvent = new AutoResetEvent(false);
+            using var logWatcher = new FileSystemWatcher()
             {
                 Path = rbxLogDir,
-                Filter = "*.log",
-                EnableRaisingEvents = true
+                Filter = IsStudioLaunch ? "*.log" : "*_Player_*.log"
             };
-
-            var logCreatedEvent = new AutoResetEvent(false);
 
             logWatcher.Created += (_, e) =>
             {
-                logWatcher.EnableRaisingEvents = false;
-                logFileName = e.FullPath;
-                logCreatedEvent.Set();
+                if (!e.FullPath.Contains("CrashHandler", StringComparison.OrdinalIgnoreCase) &&
+                    Interlocked.CompareExchange(ref logFileName, e.FullPath, null) is null)
+                {
+                    try { logCreatedEvent.Set(); }
+                    catch (ObjectDisposedException) { }
+                }
             };
+            logWatcher.EnableRaisingEvents = true;
 
             // v2.2.0 - byfron will trip if we keep a process handle open for over a minute, so we're doing this now
+            long startTime = 0;
             try
             {
                 using var process = Process.Start(startInfo)!;
                 _appPid = process.Id;
+                try { startTime = process.StartTime.ToUniversalTime().Ticks; }
+                catch (InvalidOperationException) { }
+                catch (Win32Exception) { }
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
@@ -637,10 +650,11 @@ namespace Bloxstrap
                 App.Logger.WriteLine(LOG_IDENT, $"Got log file as {logFileName}");
             }
 
-            _mutex?.ReleaseAsync();
-
             if (IsStudioLaunch)
+            {
+                _mutex?.ReleaseAsync();
                 return;
+            }
 
             var autoclosePids = new List<int>();
 
@@ -673,30 +687,43 @@ namespace Bloxstrap
                     autoclosePids.Add(pid);
             }
 
-            if (App.Settings.Prop.EnableActivityTracking || App.LaunchSettings.TestModeFlag.Active || autoclosePids.Any())
+            using var ready = multiInstance ? MultiInstanceLease.CreateReadyEvent(_appPid) : null;
+            var watcherData = new WatcherData
             {
-                using var ipl = new InterProcessLock("Watcher", TimeSpan.FromSeconds(5));
+                ProcessId = _appPid,
+                ProcessStartTimeUtc = startTime,
+                MultiInstance = multiInstance,
+                LogFile = logFileName,
+                AutoclosePids = autoclosePids
+            };
 
-                var watcherData = new WatcherData 
-                { 
-                    ProcessId = _appPid, 
-                    LogFile = logFileName, 
-                    AutoclosePids = autoclosePids
-                };
+            string watcherDataArg = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(watcherData)));
+            string args = $"-watcher {watcherDataArg}";
+            if (App.LaunchSettings.TestModeFlag.Active)
+                args += " -testmode";
 
-                string watcherDataArg = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(watcherData)));
+            using var watcher = Process.Start(Paths.Process, args);
+            if (ready is not null && !ready.WaitOne(TimeSpan.FromSeconds(5)))
+                App.Logger.WriteLine(LOG_IDENT, "The multi-instance watcher did not confirm startup.");
 
-                string args = $"-watcher \"{watcherDataArg}\"";
-
-                if (App.LaunchSettings.TestModeFlag.Active)
-                    args += " -testmode";
-
-                if (ipl.IsAcquired)
-                    Process.Start(Paths.Process, args);
-            }
+            _mutex?.ReleaseAsync();
 
             // allow for window to show, since the log is created pretty far beforehand
             Thread.Sleep(1000);
+        }
+
+        private static MultiInstanceLease? TryAcquireMultiInstanceLease()
+        {
+            try
+            {
+                return new MultiInstanceLease();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException or IOException)
+            {
+                App.Logger.WriteException("Bootstrapper::MultiInstance", ex);
+                Frontend.ShowMessageBox("Finstrap could not reserve the Roblox instance names. Close existing Roblox clients before the first multi-instance launch.", MessageBoxImage.Warning);
+                return null;
+            }
         }
 
         private bool ShouldRunAsAdmin()
@@ -804,7 +831,7 @@ namespace Bloxstrap
             try
             {
 #if DEBUG_UPDATER
-                string downloadLocation = Path.Combine(Paths.TempUpdates, "Bloxstrap.exe");
+                string downloadLocation = Path.Combine(Paths.TempUpdates, $"{App.ProjectName}.exe");
 
                 Directory.CreateDirectory(Paths.TempUpdates);
 

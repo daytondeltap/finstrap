@@ -14,15 +14,15 @@ namespace Bloxstrap
     public partial class App : Application
     {
 #if QA_BUILD
-        public const string ProjectName = "Bloxstrap-QA";
+        public const string ProjectName = "Finstrap-QA";
 #else
-        public const string ProjectName = "Bloxstrap";
+        public const string ProjectName = "Finstrap";
 #endif
-        public const string ProjectOwner = "Bloxstrap";
-        public const string ProjectRepository = "bloxstraplabs/bloxstrap";
-        public const string ProjectDownloadLink = "https://bloxstraplabs.com";
+        public const string ProjectOwner = "Finstrap contributors";
+        public const string ProjectRepository = "daytondeltap/finstrap";
+        public const string ProjectDownloadLink = "https://github.com/daytondeltap/finstrap";
         public const string ProjectHelpLink = "https://bloxstraplabs.com/wiki/help/";
-        public const string ProjectSupportLink = "https://github.com/bloxstraplabs/bloxstrap/issues/new";
+        public const string ProjectSupportLink = "https://github.com/daytondeltap/finstrap/issues/new";
 
         public const string RobloxPlayerAppName = "RobloxPlayerBeta";
         public const string RobloxStudioAppName = "RobloxStudioBeta";

@@ -1,4 +1,8 @@
-﻿using System.Windows.Controls;
+using System.Windows;
+using System.Windows.Controls;
+using Microsoft.Win32;
+
+using Bloxstrap.Integrations;
 
 using Bloxstrap.UI.ViewModels.Settings;
 
@@ -9,10 +13,79 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
     /// </summary>
     public partial class IntegrationsPage
     {
+        public Models.Persistable.Settings FinstrapSettings => App.Settings.Prop;
+
         public IntegrationsPage()
         {
             DataContext = new IntegrationsViewModel();
             InitializeComponent();
+        }
+
+        private void NewProfile_Click(object sender, RoutedEventArgs e)
+        {
+            var profile = new SessionProfile { Name = "Roblox account" };
+            FinstrapSettings.SessionProfiles.Add(profile);
+            ProfilesList.SelectedItem = profile;
+        }
+
+        private void RemoveProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesList.SelectedItem is SessionProfile profile)
+                FinstrapSettings.SessionProfiles.Remove(profile);
+        }
+
+        private void ChooseRecording_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesList.SelectedItem is not SessionProfile profile)
+                return;
+
+            var dialog = new OpenFileDialog { Filter = "TinyTask recordings (*.rec)|*.rec" };
+            if (dialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                TinyTaskRecording.Read(dialog.FileName);
+                profile.MacroPath = dialog.FileName;
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                Frontend.ShowMessageBox(ex.Message, MessageBoxImage.Warning);
+            }
+        }
+
+        private void ClearRecording_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesList.SelectedItem is SessionProfile profile)
+            {
+                profile.MacroPath = "";
+            }
+        }
+
+        private void OpenProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesList.SelectedItem is not SessionProfile profile)
+                return;
+
+            ProfileUserId.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty)?.UpdateSource();
+            ProfilePlaceId.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty)?.UpdateSource();
+            if (Validation.GetHasError(ProfileUserId) || Validation.GetHasError(ProfilePlaceId))
+            {
+                Frontend.ShowMessageBox("Enter numeric Roblox user and place IDs.", MessageBoxImage.Warning);
+                return;
+            }
+
+            if (profile.UserId > 0 && FinstrapSettings.SessionProfiles.Count(item => item.UserId == profile.UserId) > 1)
+            {
+                Frontend.ShowMessageBox("Each account profile needs a different Roblox user ID.", MessageBoxImage.Warning);
+                return;
+            }
+
+            try { profile.Open(); }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
+            {
+                Frontend.ShowMessageBox(ex.Message, MessageBoxImage.Warning);
+            }
         }
 
         public void CustomIntegrationSelection(object sender, SelectionChangedEventArgs e)

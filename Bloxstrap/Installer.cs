@@ -27,7 +27,7 @@ namespace Bloxstrap
 
         public bool CreateStartMenuShortcuts = true;
 
-        public bool EnableAnalytics = true;
+        public bool EnableAnalytics = false;
 
         public bool IsImplicitInstall = false;
 
@@ -521,7 +521,7 @@ namespace Bloxstrap
                     }
 
                     string oldDesktopPath = Path.Combine(Paths.Desktop, "Play Roblox.lnk");
-                    string oldStartPath = Path.Combine(Paths.WindowsStartMenu, "Bloxstrap");
+                    string oldStartPath = Path.Combine(Paths.WindowsStartMenu, App.ProjectName);
 
                     if (File.Exists(oldDesktopPath))
                         File.Move(oldDesktopPath, DesktopShortcut, true);
@@ -540,7 +540,7 @@ namespace Bloxstrap
                         Shortcut.Create(Paths.Application, "", StartMenuShortcut);
                     }
 
-                    Registry.CurrentUser.DeleteSubKeyTree("Software\\Bloxstrap", false);
+                    Registry.CurrentUser.DeleteSubKeyTree($@"Software\{App.ProjectName}", false);
 
                     WindowsRegistry.RegisterPlayer();
                 }

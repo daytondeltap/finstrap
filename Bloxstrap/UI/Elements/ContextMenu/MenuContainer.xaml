@@ -22,7 +22,7 @@
         Loaded="Window_Loaded"
         Closed="Window_Closed">
     <ui:UiWindow.ContextMenu>
-        <ContextMenu>
+        <ContextMenu Opened="SessionMenu_Opened">
             <MenuItem IsEnabled="False">
                 <MenuItem.Header>
                     <Grid>
@@ -73,6 +73,11 @@
                     </Grid>
                 </MenuItem.Header>
             </MenuItem>
+            <MenuItem x:Name="SessionLabel" IsEnabled="False" />
+            <MenuItem Header="Load TinyTask recording…" Click="LoadMacro_Click" />
+            <MenuItem x:Name="PlayMacroItem" Header="Play assigned recording" Click="PlayMacro_Click" />
+            <MenuItem x:Name="StopMacroItem" Header="Stop recording playback (F12)" Click="StopMacro_Click" />
+            <Separator />
             <MenuItem Click="CloseRobloxMenuItem_Click">
                 <MenuItem.Header>
                     <Grid>

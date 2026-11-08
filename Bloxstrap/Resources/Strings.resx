@@ -739,7 +739,7 @@ Selecting 'No' will ignore this warning and continue installation.</value>
     <value>Settings saved!</value>
   </data>
   <data name="Menu.Title" xml:space="preserve">
-    <value>Bloxstrap Settings</value>
+    <value>Finstrap Settings</value>
   </data>
   <data name="Dialog.LanguageSelector.Header" xml:space="preserve">
     <value>Choose preferred language</value>
@@ -817,7 +817,7 @@ Selecting 'No' will ignore this warning and continue installation.</value>
     <value>The entry for '{0}' is not valid as the place filter is not formatted correctly.</value>
   </data>
   <data name="Installer.Title" xml:space="preserve">
-    <value>Bloxstrap Installer</value>
+    <value>Finstrap Installer</value>
   </data>
   <data name="Installer.Welcome.Title" xml:space="preserve">
     <value>Welcome</value>
@@ -836,11 +836,11 @@ Selecting 'No' will ignore this warning and continue installation.</value>
     <value>Next</value>
   </data>
   <data name="Installer.Welcome.MainText" xml:space="preserve">
-    <value>Thank you for downloading Bloxstrap. 
+    <value>Thank you for downloading Finstrap.
 
-The only official websites to download Bloxstrap from are {0} and {1}, so please verify that you got it from an official source.
+Finstrap is available at {0} and is based on {1}.
 
-This installation process will be quick and simple, and you will be able to configure any of Bloxstrap's settings after installation.</value>
+This installation process will be quick and simple, and you will be able to configure Finstrap's settings after installation.</value>
     <comment>{0} and {1} are URLs</comment>
   </data>
   <data name="Installer.Welcome.NextToContinue" xml:space="preserve">
@@ -877,7 +877,7 @@ Also, avoid using the "Roblox Player" shortcut to launch Roblox, as Bloxstrap wo
 What would you like to do?</value>
   </data>
   <data name="Installer.Completion.Settings.Title" xml:space="preserve">
-    <value>Configure Bloxstrap's settings</value>
+    <value>Configure Finstrap's settings</value>
   </data>
   <data name="Installer.Completion.Settings.Description" xml:space="preserve">
     <value>Tweak with all the features it has to offer</value>
@@ -889,7 +889,7 @@ What would you like to do?</value>
     <value>Will drop you into the desktop app once everything's done</value>
   </data>
   <data name="Uninstaller.Title" xml:space="preserve">
-    <value>Uninstall Bloxstrap</value>
+    <value>Uninstall Finstrap</value>
   </data>
   <data name="Uninstaller.Text" xml:space="preserve">
     <value>Uninstalling will remove Bloxstrap from your system, and automatically reconfigure the default Roblox launcher if it's still installed.
@@ -965,7 +965,7 @@ If not, then please report this exception to the maintainers of this fork. Do no
     <value>Please wait for uninstallation to finish.</value>
   </data>
   <data name="About.Title" xml:space="preserve">
-    <value>About Bloxstrap</value>
+    <value>About Finstrap</value>
   </data>
   <data name="About.Licenses.Title" xml:space="preserve">
     <value>Licenses</value>
@@ -1033,7 +1033,7 @@ Every person here is ranked by their overall pledge.</value>
   <data name="Installer.Install.CannotOverwrite" xml:space="preserve">
     <value>Bloxstrap has been installed to this location before and is still present, however the installer cannot overwrite the old executable. 
 
-Please manually delete Bloxstrap.exe from the install location or try restarting your system, and then retry installation afterwards.</value>
+Please manually delete Finstrap.exe from the install location or try restarting your system, and then retry installation afterwards.</value>
   </data>
   <data name="Common.NotAvailable" xml:space="preserve">
     <value>Not available</value>

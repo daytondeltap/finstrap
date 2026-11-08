@@ -123,5 +123,58 @@
                 </TextBlock.Style>
             </TextBlock>
         </Grid>
+        <TextBlock Text="Roblox sessions" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
+        <controls:OptionControl Header="Multi-instance launching (experimental)"
+                                Description="Start with Roblox closed. Client updates can affect whether several clients stay open.">
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.MultiInstance, ElementName=IntegrationsPageView}" />
+        </controls:OptionControl>
+        <controls:OptionControl Header="Keep computer awake"
+                                Description="Prevent automatic Windows sleep while a Finstrap Roblox session is open.">
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.KeepComputerAwake, ElementName=IntegrationsPageView}" />
+        </controls:OptionControl>
+        <controls:OptionControl Header="15-minute anti-idle preset (experimental)"
+                                Description="While the desktop is idle, send Space to the foreground Roblox game only. Space may cause your character to jump.">
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.ForegroundAntiIdle, ElementName=IntegrationsPageView}" />
+        </controls:OptionControl>
+
+        <TextBlock Text="Account profiles and TinyTask recordings" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
+        <TextBlock Text="Open a profile to sign in through its own Edge session, then press Play on Roblox. Finstrap matches the account by user ID after the game joins. Use that client's tray menu to play its recording."
+                   TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+        <ListBox x:Name="ProfilesList" Margin="0,8,0,0" MinHeight="48" MaxHeight="160"
+                 ItemsSource="{Binding FinstrapSettings.SessionProfiles, ElementName=IntegrationsPageView}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <WrapPanel Margin="0,8,0,0">
+            <ui:Button Content="New profile" Icon="Add28" Margin="0,0,8,0" Click="NewProfile_Click" />
+            <ui:Button Content="Remove profile" Icon="Delete28" Click="RemoveProfile_Click" />
+        </WrapPanel>
+        <StackPanel DataContext="{Binding SelectedItem, ElementName=ProfilesList}" Margin="0,8,0,0">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+            <TextBlock Text="Profile name" />
+            <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" />
+            <TextBlock Text="Roblox user ID (number in the profile URL)" />
+            <ui:TextBox x:Name="ProfileUserId" Text="{Binding UserId, ValidatesOnExceptions=True}" Margin="0,4,0,8" />
+            <TextBlock Text="Experience place ID (0 opens Roblox home)" />
+            <ui:TextBox x:Name="ProfilePlaceId" Text="{Binding PlaceId, ValidatesOnExceptions=True}" Margin="0,4,0,8" />
+            <TextBlock Text="TinyTask recording" />
+            <WrapPanel Margin="0,4,0,8">
+                <ui:Button Content="Choose .rec file" Icon="Folder24" Click="ChooseRecording_Click" Margin="0,0,8,0" />
+                <ui:Button Content="Clear recording" Click="ClearRecording_Click" />
+            </WrapPanel>
+            <TextBlock Text="{Binding MacroPath}" TextWrapping="Wrap" />
+            <ui:Button Content="Open Roblox for this account" Icon="Open24" Margin="0,8,0,0" Click="OpenProfile_Click" />
+        </StackPanel>
     </StackPanel>
 </ui:UiPage>

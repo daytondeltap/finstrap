@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using Microsoft.Win32;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 
@@ -115,6 +116,38 @@ namespace Bloxstrap.UI.Elements.ContextMenu
             if (location is not null)
                 Utilities.ShellExecute(location);
         }
+
+        private void SessionMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            string? name = _watcher.Profile?.Name;
+            SessionLabel.Header = String.IsNullOrWhiteSpace(name)
+                ? $"Roblox client {_watcher.ProcessId}"
+                : $"{name} · client {_watcher.ProcessId}";
+            PlayMacroItem.IsEnabled = !_watcher.IsPlaying && !String.IsNullOrWhiteSpace(_watcher.MacroPath);
+            StopMacroItem.IsEnabled = _watcher.IsPlaying;
+        }
+
+        private void LoadMacro_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog { Filter = "TinyTask recordings (*.rec)|*.rec" };
+            if (dialog.ShowDialog() == true)
+                _watcher.SetMacro(dialog.FileName);
+        }
+
+        private async void PlayMacro_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _watcher.PlayMacro();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception)
+            {
+                Frontend.ShowMessageBox(ex.Message, MessageBoxImage.Warning);
+            }
+        }
+
+        private void StopMacro_Click(object sender, RoutedEventArgs e) => _watcher.StopMacro();
 
         private void CloseRobloxMenuItem_Click(object sender, RoutedEventArgs e)
         {
