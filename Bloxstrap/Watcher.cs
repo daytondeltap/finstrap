@@ -17,9 +17,17 @@ namespace Bloxstrap
         private string? _macroOverride;
 
         public int ProcessId => _watcherData?.ProcessId ?? 0;
-        public SessionProfile? Profile => ActivityWatcher?.InGame == true
-            ? App.Settings.Prop.SessionProfiles.FirstOrDefault(profile => profile.UserId > 0 && profile.UserId == ActivityWatcher.Data.UserId)
-            : null;
+        public SessionProfile? Profile
+        {
+            get
+            {
+                long linkedUserId = _watcherData?.AccountUserId ?? 0;
+                long userId = ActivityWatcher?.InGame == true ? ActivityWatcher.Data.UserId : linkedUserId;
+                if (userId <= 0 || (linkedUserId > 0 && linkedUserId != userId))
+                    return null;
+                return App.Settings.Prop.SessionProfiles.FirstOrDefault(profile => profile.UserId == userId);
+            }
+        }
         public string? MacroPath => _macroOverride ?? Profile?.MacroPath;
         public bool IsPlaying => _playback is not null;
 

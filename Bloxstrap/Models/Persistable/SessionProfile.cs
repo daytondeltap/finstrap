@@ -8,6 +8,7 @@ namespace Bloxstrap.Models.Persistable
         private string _name = "";
         public long UserId { get; set; }
         public long PlaceId { get; set; }
+        public string? LaunchProfileKey { get; set; }
         [ObservableProperty]
         private string _macroPath = "";
 

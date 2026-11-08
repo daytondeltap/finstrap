@@ -80,6 +80,9 @@ namespace Bloxstrap
 
         public string MutexNamePrefix { get; set; } = $"{App.ProjectName}-Bootstrapper";
         public bool QuitIfMutexExists { get; set; } = false;
+        internal Func<Task<RobloxAccountLaunch?>>? AccountLaunch { get; init; }
+        internal bool AccountPlayerStarted { get; private set; }
+        private long _accountUserId;
         #endregion
 
         #region Core
@@ -194,7 +197,7 @@ namespace Bloxstrap
                 HandleConnectionError(connectionResult);
             
 #if (!DEBUG || DEBUG_UPDATER) && !QA_BUILD
-            if (App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
+            if (AccountLaunch is null && App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
             {
                 bool updatePresent = await CheckForUpdates();
                 
@@ -248,6 +251,12 @@ namespace Bloxstrap
             }
 
             await SafeGetLatestVersionInfo();
+
+            if (AccountLaunch is not null && !App.Settings.Prop.MultiInstance && HasRunningPlayer())
+            {
+                Frontend.ShowMessageBox("Close the running Roblox client or enable multi-instance launching before launching another account.", MessageBoxImage.Information);
+                return;
+            }
 
             bool preserveSessions = !IsStudioLaunch && App.Settings.Prop.MultiInstance && HasRunningPlayer();
             if (!preserveSessions)
@@ -316,7 +325,20 @@ namespace Bloxstrap
                         Frontend.ShowBalloonTip(Strings.Bootstrapper_ModificationsFailed_Title, Strings.Bootstrapper_ModificationsFailed_Message, ToolTipIcon.Warning);
                 }
 
-                StartRoblox();
+                if (AccountLaunch is null)
+                {
+                    StartRoblox();
+                }
+                else
+                {
+                    var account = await AccountLaunch();
+                    if (account is null)
+                        return;
+                    _accountUserId = account.UserId;
+                    _launchCommandLine = account.Arguments;
+                    try { StartRoblox(); }
+                    finally { _launchCommandLine = ""; }
+                }
             }
 
             await mutex.ReleaseAsync();
@@ -651,6 +673,7 @@ namespace Bloxstrap
             {
                 ProcessId = _appPid,
                 ProcessStartTimeUtc = startTime,
+                AccountUserId = _accountUserId,
                 MultiInstance = multiInstance
             };
             using (var player = IsStudioLaunch ? null : PlayerLifetime.Open(watcherData))
@@ -722,6 +745,8 @@ namespace Bloxstrap
                 App.Logger.WriteLine(LOG_IDENT, "The multi-instance watcher did not confirm startup.");
 
             _mutex?.ReleaseAsync();
+
+            AccountPlayerStarted = _accountUserId > 0;
 
             // allow for window to show, since the log is created pretty far beforehand
             Thread.Sleep(1000);
