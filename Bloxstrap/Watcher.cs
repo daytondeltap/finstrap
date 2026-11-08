@@ -76,11 +76,7 @@ namespace Bloxstrap
                 return;
 
             if (_watcherData.MultiInstance)
-            {
                 _multiLease = new MultiInstanceLease();
-                using var ready = MultiInstanceLease.CreateReadyEvent(ProcessId);
-                ready.Set();
-            }
 
             _keepAwake = App.Settings.Prop.KeepComputerAwake;
             if (_keepAwake)
@@ -91,7 +87,7 @@ namespace Bloxstrap
             {
                 ActivityWatcher = new(_watcherData.LogFile);
 
-                if (App.Settings.Prop.UseDisableAppPatch)
+                if (App.Settings.Prop.UseDisableAppPatch && !_watcherData.KeepDesktopApp)
                 {
                     ActivityWatcher.OnAppClose += delegate
                     {
@@ -115,6 +111,11 @@ namespace Bloxstrap
             }
 
             _notifyIcon = new(this);
+            if (_watcherData.MultiInstance && IsPlayerRunning())
+            {
+                using var ready = MultiInstanceLease.CreateReadyEvent(ProcessId);
+                ready.Set();
+            }
         }
 
         public void KillRobloxProcess()

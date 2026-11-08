@@ -20,6 +20,20 @@ namespace Bloxstrap.Integrations
             }
         }
 
+        public static MultiInstanceLease AcquireForLaunch()
+        {
+            try
+            {
+                return new MultiInstanceLease();
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                if (!RobloxPlayerProcesses.CloseVerifiedTrayProcesses())
+                    throw;
+                return new MultiInstanceLease();
+            }
+        }
+
         public static EventWaitHandle CreateReadyEvent(int pid) =>
             new(false, EventResetMode.ManualReset, $"{App.ProjectName}-InstanceReady-{pid}");
 

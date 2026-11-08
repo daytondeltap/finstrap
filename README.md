@@ -12,7 +12,11 @@ Finstrap is a Windows fork of [Bloxstrap](https://github.com/bloxstraplabs/bloxs
 
 ## Launch from saved accounts
 
-Open the Finstrap launch menu and choose **Add account and launch**. Sign in on the Roblox page in the Finstrap window. Once Roblox verifies the sign-in, Finstrap opens the desktop app at Home without needing a place ID. For an account already listed, check it and choose **Launch selected**. When multi-instance launching is enabled, one confirmation queues all checked accounts. Finstrap starts the clients in order so it can match each client to its account.
+Open the Finstrap launch menu and choose **Add account and launch**. Sign in and complete Roblox's verification in the Finstrap window. Finstrap launches automatically once it can verify the account. Use **Launch selected** for checked accounts, or **Launch all** when multi-instance is enabled. One confirmation starts the queue, and Finstrap waits for each client's watcher before continuing.
+
+Use **Destination** to send the batch to one place or server. Leave it blank to use each account's saved place ID. An ID of `0` opens Roblox Home. A positive ID or game link uses Roblox matchmaking. Paste a private-server invite or a link containing a public server instance ID to target that server. Enter a friend's Roblox username or profile link to follow their current game. Roblox still checks access and join permissions for each account.
+
+If Roblox's background tray processes block multi-instance startup, Finstrap closes only those it can verify are tray processes without an open window and retries.
 
 Account launch uses the Microsoft WebView2 Runtime inside Finstrap. Existing browser profiles can still be opened from Integrations. Sign in once in the Finstrap window for each saved account before using its desktop launch session.
 

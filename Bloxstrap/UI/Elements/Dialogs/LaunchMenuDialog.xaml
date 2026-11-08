@@ -89,9 +89,16 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                <TextBlock Text="Destination" Margin="0,8,0,2" />
+                <ui:TextBox x:Name="AccountDestination" PlaceholderText="Place ID, server link, or friend"
+                            AutomationProperties.Name="Roblox launch destination" />
+                <TextBlock Text="Blank uses saved place IDs. Enter 0 for Roblox Home."
+                           TextWrapping="Wrap" Margin="0,3,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <WrapPanel Margin="0,8,0,0">
                     <ui:Button Content="Add account and launch" Click="AddAccount_Click" Margin="0,0,4,4" />
-                    <ui:Button x:Name="LaunchSelected" Content="Launch selected" Click="LaunchSelected_Click" IsEnabled="False" Margin="0,0,0,4" />
+                    <ui:Button x:Name="LaunchSelected" Content="Launch selected" Click="LaunchSelected_Click" IsEnabled="False" Margin="0,0,4,4" />
+                    <ui:Button x:Name="LaunchAll" Content="Launch all" Click="LaunchAll_Click" IsEnabled="False" Margin="0,0,0,4" />
                 </WrapPanel>
                 <TextBlock x:Name="AccountStatus" TextWrapping="Wrap" Margin="0,2,0,0"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />

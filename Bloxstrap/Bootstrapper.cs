@@ -80,9 +80,10 @@ namespace Bloxstrap
 
         public string MutexNamePrefix { get; set; } = $"{App.ProjectName}-Bootstrapper";
         public bool QuitIfMutexExists { get; set; } = false;
-        internal Func<Task<RobloxAccountLaunch?>>? AccountLaunch { get; init; }
-        internal bool AccountPlayerStarted { get; private set; }
+        internal IReadOnlyList<Func<Task<RobloxAccountLaunch?>>>? AccountLaunches { get; init; }
+        internal int AccountPlayersStarted { get; private set; }
         private long _accountUserId;
+        private bool _keepDesktopApp;
         #endregion
 
         #region Core
@@ -197,7 +198,7 @@ namespace Bloxstrap
                 HandleConnectionError(connectionResult);
             
 #if (!DEBUG || DEBUG_UPDATER) && !QA_BUILD
-            if (AccountLaunch is null && App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
+            if (AccountLaunches is null && App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
             {
                 bool updatePresent = await CheckForUpdates();
                 
@@ -252,13 +253,19 @@ namespace Bloxstrap
 
             await SafeGetLatestVersionInfo();
 
-            if (AccountLaunch is not null && !App.Settings.Prop.MultiInstance && HasRunningPlayer())
+            bool multiPlayer = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
+            bool hasActivePlayer = (multiPlayer || AccountLaunches is not null) && RobloxPlayerProcesses.HasActivePlayer();
+            if (AccountLaunches is not null && !multiPlayer)
             {
-                Frontend.ShowMessageBox("Close the running Roblox client or enable multi-instance launching before launching another account.", MessageBoxImage.Information);
-                return;
+                if (AccountLaunches.Count > 1 || hasActivePlayer)
+                {
+                    Frontend.ShowMessageBox("Close the running Roblox client or enable multi-instance launching before launching another account.", MessageBoxImage.Information);
+                    return;
+                }
+                RobloxPlayerProcesses.CloseVerifiedTrayProcesses();
             }
 
-            bool preserveSessions = !IsStudioLaunch && App.Settings.Prop.MultiInstance && HasRunningPlayer();
+            bool preserveSessions = multiPlayer && hasActivePlayer;
             if (!preserveSessions)
                 CleanupVersionsFolder(); // cleanup after background updater
 
@@ -325,19 +332,30 @@ namespace Bloxstrap
                         Frontend.ShowBalloonTip(Strings.Bootstrapper_ModificationsFailed_Title, Strings.Bootstrapper_ModificationsFailed_Message, ToolTipIcon.Warning);
                 }
 
-                if (AccountLaunch is null)
+                if (AccountLaunches is null)
                 {
                     StartRoblox();
                 }
                 else
                 {
-                    var account = await AccountLaunch();
-                    if (account is null)
+                    bool multiInstance = App.Settings.Prop.MultiInstance;
+                    using var lease = multiInstance ? TryAcquireMultiInstanceLease() : null;
+                    if (multiInstance && lease is null)
                         return;
-                    _accountUserId = account.UserId;
-                    _launchCommandLine = account.Arguments;
-                    try { StartRoblox(); }
-                    finally { _launchCommandLine = ""; }
+
+                    foreach (var signIn in AccountLaunches)
+                    {
+                        if (_cancelTokenSource.IsCancellationRequested)
+                            break;
+                        var account = await signIn();
+                        if (account is null)
+                            continue;
+                        _accountUserId = account.UserId;
+                        _keepDesktopApp = account.OpenDesktopHome;
+                        _launchCommandLine = account.Arguments;
+                        try { StartRoblox(keepLaunchLock: true); }
+                        finally { _launchCommandLine = ""; }
+                    }
                 }
             }
 
@@ -588,15 +606,15 @@ namespace Bloxstrap
             }
         }
 
-        private void StartRoblox()
+        private void StartRoblox(bool keepLaunchLock = false)
         {
             const string LOG_IDENT = "Bootstrapper::StartRoblox";
 
             SetStatus(Strings.Bootstrapper_Status_Starting);
 
             bool multiInstance = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
-            using var multiLease = multiInstance ? TryAcquireMultiInstanceLease() : null;
-            if (multiInstance && multiLease is null)
+            using var multiLease = multiInstance && !keepLaunchLock ? TryAcquireMultiInstanceLease() : null;
+            if (multiInstance && !keepLaunchLock && multiLease is null)
                 return;
 
             var startInfo = new ProcessStartInfo()
@@ -674,6 +692,7 @@ namespace Bloxstrap
                 ProcessId = _appPid,
                 ProcessStartTimeUtc = startTime,
                 AccountUserId = _accountUserId,
+                KeepDesktopApp = _keepDesktopApp,
                 MultiInstance = multiInstance
             };
             using (var player = IsStudioLaunch ? null : PlayerLifetime.Open(watcherData))
@@ -741,35 +760,34 @@ namespace Bloxstrap
                 args += " -testmode";
 
             using var watcher = Process.Start(Paths.Process, args);
-            if (ready is not null && !ready.WaitOne(TimeSpan.FromSeconds(5)))
+            if (ready is not null && !ready.WaitOne(TimeSpan.FromSeconds(12)))
+            {
                 App.Logger.WriteLine(LOG_IDENT, "The multi-instance watcher did not confirm startup.");
+                Frontend.ShowMessageBox("Roblox started, but Finstrap could not verify multi-instance tracking for this window.",
+                    MessageBoxImage.Warning);
+                return;
+            }
 
-            _mutex?.ReleaseAsync();
+            if (!keepLaunchLock)
+                _mutex?.ReleaseAsync();
 
-            AccountPlayerStarted = _accountUserId > 0;
+            if (_accountUserId > 0)
+                AccountPlayersStarted++;
 
             // allow for window to show, since the log is created pretty far beforehand
             Thread.Sleep(1000);
-        }
-
-        private static bool HasRunningPlayer()
-        {
-            Process[] players = Process.GetProcessesByName(App.RobloxPlayerAppName);
-            foreach (Process player in players)
-                player.Dispose();
-            return players.Length > 0;
         }
 
         private static MultiInstanceLease? TryAcquireMultiInstanceLease()
         {
             try
             {
-                return new MultiInstanceLease();
+                return MultiInstanceLease.AcquireForLaunch();
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException or IOException)
             {
                 App.Logger.WriteException("Bootstrapper::MultiInstance", ex);
-                Frontend.ShowMessageBox("Finstrap could not reserve the Roblox instance names. Close existing Roblox clients before the first multi-instance launch.", MessageBoxImage.Warning);
+                Frontend.ShowMessageBox("Finstrap could not reserve the Roblox instance names. Exit any Roblox windows or Roblox notification-area icon, then retry.", MessageBoxImage.Warning);
                 return null;
             }
         }
@@ -1111,6 +1129,8 @@ namespace Bloxstrap
 
                 if (IsStudioLaunch)
                     await GracefullyCloseRobloxInstances();
+                else if (App.Settings.Prop.MultiInstance)
+                    RobloxPlayerProcesses.CloseVerifiedTrayProcesses();
                 else
                     KillRobloxInstances();
 

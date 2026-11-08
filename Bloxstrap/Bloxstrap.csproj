@@ -10,8 +10,8 @@
     <UseWindowsForms>True</UseWindowsForms>
     <IncludeNativeLibrariesForSelfExtract Condition="'$(PublishSingleFile)' == 'true'">true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationIcon>Bloxstrap.ico</ApplicationIcon>
-    <Version>2.12.0</Version>
-    <FileVersion>2.12.0</FileVersion>
+    <Version>2.12.1</Version>
+    <FileVersion>2.12.1</FileVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
@@ -67,6 +67,7 @@
     </PackageReference>
     <PackageReference Include="securifybv.ShellLink" Version="0.1.0" />
     <PackageReference Include="SharpZipLib" Version="1.4.2" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="System.Resources.ResourceManager" Version="4.3.0" />
     <PackageReference Include="XamlAnimatedGif" Version="2.3.0" />
   </ItemGroup>

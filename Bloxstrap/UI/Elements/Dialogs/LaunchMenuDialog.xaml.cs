@@ -43,6 +43,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 : App.Settings.Prop.MultiInstance ? "Check the accounts you want to launch."
                 : "Select one account. Enable multi-instance launching in Integrations to select several.";
             LaunchSelected.IsEnabled = AccountsList.SelectedItems.Count > 0;
+            LaunchAll.IsEnabled = App.Settings.Prop.MultiInstance && accounts.Length > 0;
         }
 
         private void AccountsSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -54,21 +55,28 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private async void AddAccount_Click(object sender, RoutedEventArgs e) =>
             await LaunchAccountsAsync(new SessionProfile?[] { null });
 
-        private async void LaunchSelected_Click(object sender, RoutedEventArgs e)
+        private async void LaunchSelected_Click(object sender, RoutedEventArgs e) =>
+            await ConfirmAndLaunchAsync(AccountsList.SelectedItems.Cast<SessionProfile>().ToArray());
+
+        private async void LaunchAll_Click(object sender, RoutedEventArgs e)
         {
-            var selected = AccountsList.SelectedItems.Cast<SessionProfile>().ToArray();
-            if (selected.Length == 0)
+            if (App.Settings.Prop.MultiInstance)
+                await ConfirmAndLaunchAsync(AccountsList.Items.Cast<SessionProfile>().ToArray());
+        }
+
+        private async Task ConfirmAndLaunchAsync(SessionProfile[] accounts)
+        {
+            if (accounts.Length == 0)
                 return;
-            if (selected.Length > 1)
+            if (accounts.Length > 1)
             {
                 if (!App.Settings.Prop.MultiInstance)
                     return;
-                string accounts = string.Join("\n", selected.Select(profile => profile.Name));
-                if (Frontend.ShowMessageBox($"Launch Roblox for these accounts?\n\n{accounts}",
+                if (Frontend.ShowMessageBox($"Launch {accounts.Length} Roblox accounts?",
                         MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                     return;
             }
-            await LaunchAccountsAsync(selected);
+            await LaunchAccountsAsync(accounts);
         }
 
         private async Task LaunchAccountsAsync(IReadOnlyList<SessionProfile?> accounts)
@@ -77,31 +85,40 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 return;
             _launchingAccounts = true;
             LaunchActions.IsEnabled = false;
-            int started = 0;
             try
             {
+                AccountStatus.Text = "Preparing Roblox…";
+                var destination = AccountLaunchTarget.Parse(AccountDestination.Text);
+                if (destination is not null)
+                    destination = await destination.ResolveFriendAsync();
+
+                var launches = new List<Func<Task<RobloxAccountLaunch?>>>(accounts.Count);
                 foreach (var profile in accounts)
                 {
-                    AccountStatus.Text = profile is null ? "Preparing Roblox sign-in…"
-                        : $"Preparing Roblox for {profile.Name}…";
-                    var bootstrapper = new Bloxstrap.Bootstrapper(LaunchMode.Player)
+                    var target = destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0);
+                    launches.Add(async () => await Dispatcher.InvokeAsync(() =>
                     {
-                        AccountLaunch = async () => await Dispatcher.InvokeAsync(() => SignIn(profile))
-                    };
-                    try
-                    {
-                        await Task.Run(bootstrapper.Run);
-                        if (bootstrapper.AccountPlayerStarted)
-                            started++;
-                    }
-                    catch (Exception)
-                    {
-                        App.Logger.WriteLine("LaunchMenu::AccountLaunch", "Roblox could not start an account session.");
-                    }
+                        AccountStatus.Text = profile is null ? "Opening Roblox sign-in…"
+                            : $"Launching Roblox for {profile.Name}…";
+                        return SignIn(profile, target);
+                    }));
                 }
+
+                var bootstrapper = new Bloxstrap.Bootstrapper(LaunchMode.Player) { AccountLaunches = launches };
+                await Task.Run(bootstrapper.Run);
+                int started = bootstrapper.AccountPlayersStarted;
                 AccountStatus.Text = started == accounts.Count
                     ? started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
                     : $"Started {started} of {accounts.Count} requested Roblox clients.";
+            }
+            catch (FormatException ex)
+            {
+                AccountStatus.Text = ex.Message;
+            }
+            catch (Exception)
+            {
+                App.Logger.WriteLine("LaunchMenu::AccountLaunch", "Roblox could not complete the launch.");
+                AccountStatus.Text = "Roblox could not complete the launch. Check your connection and try again.";
             }
             finally
             {
@@ -111,9 +128,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private RobloxAccountLaunch? SignIn(SessionProfile? profile)
+        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target)
         {
-            var dialog = new AccountSignInDialog(profile) { Owner = this };
+            var dialog = new AccountSignInDialog(profile, target) { Owner = this };
             if (dialog.ShowDialog() != true || dialog.Result is not { } launch)
                 return null;
 
@@ -122,6 +139,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if (saved is null)
             {
                 saved = new SessionProfile { UserId = launch.UserId, Name = launch.Username };
+                if (target.PlaceId > 0 && target.JobId is null && target.LinkCode is null && target.AccessCode is null)
+                    saved.PlaceId = target.PlaceId;
                 profiles.Add(saved);
             }
             if (saved.LaunchProfileKey != launch.ProfileKey)
