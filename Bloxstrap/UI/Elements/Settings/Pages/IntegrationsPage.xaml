@@ -138,7 +138,7 @@
         </controls:OptionControl>
 
         <TextBlock Text="Account profiles and TinyTask recordings" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
-        <TextBlock Text="Open a profile to sign in through its own Edge session, then press Play on Roblox. Finstrap matches the account by user ID after the game joins. Use that client's tray menu to play its recording."
+        <TextBlock Text="Open a profile in a separate window of your default browser. Sign in there, then press Play on Roblox. Finstrap matches the account by user ID after the game joins. Use that client's tray menu to play its recording."
                    TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         <ListBox x:Name="ProfilesList" Margin="0,8,0,0" MinHeight="48" MaxHeight="160"
                  ItemsSource="{Binding FinstrapSettings.SessionProfiles, ElementName=IntegrationsPageView}">
