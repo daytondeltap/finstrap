@@ -9,6 +9,8 @@ namespace Bloxstrap
         private Mutex? _lock;
         private Mutex? _presenceLock;
         private MultiInstanceLease? _multiLease;
+        private readonly PlayerLifetime? _player;
+        private Task? _playbackTask;
         private readonly CancellationTokenSource _sessionEnded = new();
         private volatile CancellationTokenSource? _playback;
         private bool _keepAwake;
@@ -58,7 +60,11 @@ namespace Bloxstrap
                 throw new Exception("Watcher data is invalid");
 
             _lock = new Mutex(false, $"{App.ProjectName}-Watcher-{ProcessId}", out bool isNew);
-            if (!isNew || !IsPlayerRunning())
+            if (!isNew)
+                return;
+
+            _player = PlayerLifetime.Open(_watcherData);
+            if (!IsPlayerRunning())
                 return;
 
             if (_watcherData.MultiInstance)
@@ -82,8 +88,8 @@ namespace Bloxstrap
                     ActivityWatcher.OnAppClose += delegate
                     {
                         App.Logger.WriteLine(LOG_IDENT, "Received desktop app exit, closing Roblox");
-                        using var process = Process.GetProcessById(_watcherData.ProcessId);
-                        process.CloseMainWindow();
+                        if (IsPlayerRunning())
+                            CloseProcess(ProcessId);
                     };
                 }
 
@@ -103,7 +109,11 @@ namespace Bloxstrap
             _notifyIcon = new(this);
         }
 
-        public void KillRobloxProcess() => CloseProcess(_watcherData!.ProcessId, true);
+        public void KillRobloxProcess()
+        {
+            if (IsPlayerRunning())
+                CloseProcess(ProcessId, true);
+        }
 
         public void CloseProcess(int pid, bool force = false)
         {
@@ -138,27 +148,20 @@ namespace Bloxstrap
             if (_notifyIcon is null || _watcherData is null)
                 return;
 
-            ActivityWatcher?.Start();
-            var interval = Stopwatch.StartNew();
-            bool antiIdle = App.Settings.Prop.ForegroundAntiIdle;
-            while (IsPlayerRunning())
-            {
-                if (antiIdle && !IsPlaying && ActivityWatcher?.InGame == true && interval.Elapsed >= TimeSpan.FromMinutes(15))
-                {
-                    try
-                    {
-                        if (SessionInput.TryPreventIdle(ProcessId))
-                            interval.Restart();
-                    }
-                    catch (System.ComponentModel.Win32Exception ex)
-                    {
-                        App.Logger.WriteException("Watcher::AntiIdle", ex);
-                        antiIdle = false;
-                    }
-                }
-                await Task.Delay(1000);
-            }
+            Task exited = _player!.WaitForExitAsync();
+            Task activity = TrackActivityAsync();
+            Task antiIdle = App.Settings.Prop.ForegroundAntiIdle ? RunAntiIdleAsync() : Task.CompletedTask;
+            await exited;
             _sessionEnded.Cancel();
+
+            // Wait for pending input to release its keys before terminating this watcher.
+            Task? playback = await App.Current.Dispatcher.InvokeAsync(() => _playbackTask);
+            if (playback is not null)
+            {
+                try { await playback; }
+                catch (Exception) { } // The tray command reports playback errors.
+            }
+            await Task.WhenAll(activity, antiIdle);
 
             if (_watcherData.AutoclosePids is not null)
             {
@@ -170,20 +173,42 @@ namespace Bloxstrap
                 Process.Start(Paths.Process, "-settings -testmode");
         }
 
-        private bool IsPlayerRunning()
+        private bool IsPlayerRunning() => _player?.WaitOne(0) == false;
+
+        private async Task TrackActivityAsync()
         {
-            if (_watcherData is null)
-                return false;
+            if (ActivityWatcher is null)
+                return;
 
             try
             {
-                using var process = Process.GetProcessById(ProcessId);
-                return process.ProcessName == App.RobloxPlayerAppName && !process.HasExited &&
-                    (_watcherData.ProcessStartTimeUtc == 0 || process.StartTime.ToUniversalTime().Ticks == _watcherData.ProcessStartTimeUtc);
+                await ActivityWatcher.RunAsync(_sessionEnded.Token);
             }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            catch (OperationCanceledException) when (_sessionEnded.IsCancellationRequested) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return false;
+                App.Logger.WriteException("Watcher::TrackActivity", ex);
+            }
+        }
+
+        private async Task RunAntiIdleAsync()
+        {
+            CancellationToken token = _sessionEnded.Token;
+            TimeSpan interval = TimeSpan.FromMinutes(15);
+            try
+            {
+                await Task.Delay(interval, token);
+                while (true)
+                {
+                    bool sent = !IsPlaying && ActivityWatcher?.InGame == true &&
+                        await SessionInput.TryPreventIdleAsync(ProcessId, token);
+                    await Task.Delay(sent ? interval : TimeSpan.FromSeconds(2), token);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                App.Logger.WriteException("Watcher::AntiIdle", ex);
             }
         }
 
@@ -194,7 +219,7 @@ namespace Bloxstrap
             string? path = MacroPath;
             if (_playback is not null || String.IsNullOrWhiteSpace(path))
                 return;
-            if (!IsPlayerRunning())
+            if (_sessionEnded.IsCancellationRequested || !IsPlayerRunning())
                 throw new InvalidOperationException("This Roblox instance has closed.");
 
             using var playbackLock = new Mutex(false, $"{App.ProjectName}-MacroPlayback", out bool canPlay);
@@ -203,8 +228,13 @@ namespace Bloxstrap
 
             using var playback = CancellationTokenSource.CreateLinkedTokenSource(_sessionEnded.Token);
             _playback = playback;
-            try { await SessionInput.PlayAsync(ProcessId, path, playback.Token); }
-            finally { _playback = null; }
+            _playbackTask = SessionInput.PlayAsync(ProcessId, path, playback.Token);
+            try { await _playbackTask; }
+            finally
+            {
+                _playbackTask = null;
+                _playback = null;
+            }
         }
 
         public void StopMacro() => _playback?.Cancel();
@@ -222,6 +252,7 @@ namespace Bloxstrap
             RichPresence?.Dispose();
             _presenceLock?.Dispose();
             _multiLease?.Dispose();
+            _player?.Dispose();
             _lock?.Dispose();
             _sessionEnded.Dispose();
 

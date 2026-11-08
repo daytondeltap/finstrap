@@ -4,6 +4,7 @@
 
     public class Logger
     {
+        private static readonly string UserProfile = Paths.UserProfile;
         private readonly SemaphoreSlim _semaphore = new(1, 1);
         private FileStream? _filestream;
 
@@ -106,7 +107,9 @@
         {
             string timestamp = DateTime.UtcNow.ToString("s") + "Z";
             string outcon = $"{timestamp} {message}";
-            string outlog = outcon.Replace(Paths.UserProfile, "%UserProfile%", StringComparison.InvariantCultureIgnoreCase);
+            string outlog = String.IsNullOrEmpty(UserProfile)
+                ? outcon
+                : outcon.Replace(UserProfile, "%UserProfile%", StringComparison.OrdinalIgnoreCase);
 
             Debug.WriteLine(outcon);
             WriteToLog(outlog);

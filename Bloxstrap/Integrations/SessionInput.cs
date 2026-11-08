@@ -7,6 +7,8 @@ namespace Bloxstrap.Integrations
     {
         private const uint KeyUp = 2;
         private const uint ExtendedKey = 1;
+        private static readonly int InputSize = Marshal.SizeOf<Input>();
+        private static readonly uint LastInputSize = (uint)Marshal.SizeOf<LastInput>();
 
         public static IntPtr FocusWindow(int pid)
         {
@@ -23,9 +25,21 @@ namespace Bloxstrap.Integrations
 
         public static async Task PlayAsync(int pid, string path, CancellationToken token)
         {
-            var steps = await Task.Run(() => TinyTaskRecording.Read(path), token);
+            var steps = await Task.Run(() => TinyTaskRecording.Read(path, token), token);
+            token.ThrowIfCancellationRequested();
             IntPtr window = FocusWindow(pid);
-            await Task.Delay(250, token);
+            await Task.Run(() => ReplayAsync(window, pid, steps, token), token);
+        }
+
+        private static async Task ReplayAsync(IntPtr window, int pid, List<TinyTaskRecording.Step> steps, CancellationToken token)
+        {
+            var activation = Stopwatch.StartNew();
+            while (!IsForeground(window, pid))
+            {
+                if (activation.ElapsedMilliseconds >= 500)
+                    throw new InvalidOperationException("Windows did not activate the selected Roblox window.");
+                await Task.Delay(20, token).ConfigureAwait(false);
+            }
 
             var pressedKeys = new HashSet<ushort>();
             var pressedButtons = new HashSet<uint>();
@@ -37,7 +51,7 @@ namespace Bloxstrap.Integrations
                     while (step.Milliseconds > clock.ElapsedMilliseconds)
                     {
                         CheckTarget();
-                        await Task.Delay((int)Math.Clamp(step.Milliseconds - clock.ElapsedMilliseconds, 1, 30), token);
+                        await Task.Delay((int)Math.Clamp(step.Milliseconds - clock.ElapsedMilliseconds, 1, 30), token).ConfigureAwait(false);
                     }
 
                     CheckTarget();
@@ -77,10 +91,12 @@ namespace Bloxstrap.Integrations
             }
             finally
             {
-                Input[] releases = pressedKeys.Select(key => Key(key, true))
-                    .Concat(pressedButtons.Select(Mouse)).ToArray();
-                if (releases.Length > 0)
-                    SendInput((uint)releases.Length, releases, Marshal.SizeOf<Input>());
+                if (pressedKeys.Count > 0 || pressedButtons.Count > 0)
+                {
+                    Input[] releases = pressedKeys.Select(key => Key(key, true))
+                        .Concat(pressedButtons.Select(Mouse)).ToArray();
+                    SendInput((uint)releases.Length, releases, InputSize);
+                }
             }
 
             void CheckTarget()
@@ -93,9 +109,9 @@ namespace Bloxstrap.Integrations
             }
         }
 
-        public static bool TryPreventIdle(int pid)
+        public static async Task<bool> TryPreventIdleAsync(int pid, CancellationToken token)
         {
-            var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
+            var info = new LastInput { Size = LastInputSize };
             if (!GetLastInputInfo(ref info) || unchecked((uint)Environment.TickCount - info.Time) < 15 * 60 * 1000)
                 return false;
 
@@ -103,8 +119,9 @@ namespace Bloxstrap.Integrations
             if (!IsForeground(foreground, pid))
                 return false;
 
+            token.ThrowIfCancellationRequested();
             Send(Key(0x20, false));
-            try { Thread.Sleep(120); }
+            try { await Task.Delay(120, token).ConfigureAwait(false); }
             finally { Send(Key(0x20, true)); }
             return true;
         }
@@ -128,9 +145,9 @@ namespace Bloxstrap.Integrations
         private static Input Mouse(uint flag) =>
             new() { Data = new InputData { Mouse = new MouseInput { Flags = flag } } };
 
-        private static void Send(params Input[] input)
+        private static void Send(Input input)
         {
-            if (SendInput((uint)input.Length, input, Marshal.SizeOf<Input>()) != input.Length)
+            if (SendInput(1, ref input, InputSize) != 1)
                 throw new Win32Exception("Windows blocked input to Roblox. Make sure Roblox and Finstrap run at the same privilege level.");
         }
 
@@ -153,6 +170,8 @@ namespace Bloxstrap.Integrations
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint count, Input[] inputs, int size);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint SendInput(uint count, ref Input input, int size);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);

@@ -4,7 +4,7 @@ Finstrap is a Windows fork of [Bloxstrap](https://github.com/bloxstraplabs/bloxs
 
 ## Roblox sessions
 
-- **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility.
+- **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility. If an update is required, Finstrap waits for existing clients to close before updating on the next launch.
 - **Keep computer awake** prevents automatic Windows sleep while a watched Roblox Player session is open.
 - **15-minute anti-idle preset** sends a Space press after desktop inactivity when the watched Roblox game is in the foreground. It can cause the character to jump. Background clients remain subject to Roblox's [idle disconnect](https://create.roblox.com/docs/reference/engine/classes/Player#Idled).
 - **Account profiles** open Roblox in separate Microsoft Edge sessions keyed to each Roblox user ID. Save your settings before opening a profile, sign in to the corresponding account in Edge, and click **Play** on the Roblox website. Finstrap matches the user ID reported by the game to the saved profile and its optional TinyTask recording.

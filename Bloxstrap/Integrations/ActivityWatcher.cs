@@ -1,6 +1,6 @@
 namespace Bloxstrap.Integrations
 {
-    public class ActivityWatcher : IDisposable
+    public class ActivityWatcher
     {
         private const string GameMessageEntry                = "[FLog::CreatorOutput] [BloxstrapRPC]";
         private const string GameJoiningEntry                = "[FLog::Output] ! Joining game";
@@ -24,7 +24,9 @@ namespace Bloxstrap.Integrations
         private const string GameJoinedEntryPattern          = @"serverId: ([0-9\.]+)\|[0-9]+";
         private const string GameMessageEntryPattern         = @"\[BloxstrapRPC\] (.*)";
 
+#if DEBUG
         private int _logEntriesRead = 0;
+#endif
         private bool _teleportMarker = false;
         private bool _reservedTeleportMarker = false;
         
@@ -39,7 +41,7 @@ namespace Bloxstrap.Integrations
 
         public string LogLocation = null!;
 
-        public bool InGame = false;
+        public volatile bool InGame;
         
         public ActivityData Data { get; private set; } = new();
 
@@ -48,17 +50,15 @@ namespace Bloxstrap.Integrations
         /// </summary>
         public List<ActivityData> History = new();
 
-        public bool IsDisposed = false;
-
         public ActivityWatcher(string? logFile = null)
         {
             if (!String.IsNullOrEmpty(logFile))
                 LogLocation = logFile;
         }
 
-        public async void Start()
+        public async Task RunAsync(CancellationToken token)
         {
-            const string LOG_IDENT = "ActivityWatcher::Start";
+            const string LOG_IDENT = "ActivityWatcher::Run";
 
             // okay, here's the process:
             //
@@ -88,17 +88,18 @@ namespace Bloxstrap.Integrations
 
                 while (true)
                 {
-                    logFileInfo = new DirectoryInfo(logDirectory)
-                        .GetFiles()
-                        .Where(x => x.Name.Contains("Player", StringComparison.OrdinalIgnoreCase) && x.CreationTime <= DateTime.Now)
-                        .OrderByDescending(x => x.CreationTime)
-                        .First();
-
-                    if (logFileInfo.CreationTime.AddSeconds(15) > DateTime.Now)
+                    token.ThrowIfCancellationRequested();
+                    DateTime now = DateTime.UtcNow;
+                    FileInfo? recentLog = new DirectoryInfo(logDirectory).EnumerateFiles("*_Player_*.log")
+                        .Where(file => !file.Name.Contains("CrashHandler", StringComparison.OrdinalIgnoreCase) &&
+                            file.CreationTimeUtc <= now && file.CreationTimeUtc.AddSeconds(15) > now)
+                        .MaxBy(file => file.CreationTimeUtc);
+                    if (recentLog is not null)
+                    {
+                        logFileInfo = recentLog;
                         break;
-
-                    App.Logger.WriteLine(LOG_IDENT, $"Could not find recent enough log file, waiting... (newest is {logFileInfo.Name})");
-                    await Task.Delay(1000);
+                    }
+                    await Task.Delay(1000, token);
                 }
 
                 LogLocation = logFileInfo.FullName;
@@ -116,12 +117,13 @@ namespace Bloxstrap.Integrations
 
             using var streamReader = new StreamReader(logFileStream);
 
-            while (!IsDisposed)
+            while (true)
             {
+                token.ThrowIfCancellationRequested();
                 string? log = await streamReader.ReadLineAsync();
 
                 if (log is null)
-                    await Task.Delay(1000);
+                    await Task.Delay(1000, token);
                 else
                     ReadLogEntry(log);
             }
@@ -133,6 +135,7 @@ namespace Bloxstrap.Integrations
 
             OnLogEntry?.Invoke(this, entry);
 
+#if DEBUG
             _logEntriesRead += 1;
 
             // debug stats to ensure that the log reader is working correctly
@@ -142,6 +145,8 @@ namespace Bloxstrap.Integrations
             else if (_logEntriesRead % 100 == 0)
                 App.Logger.WriteLine(LOG_IDENT, $"Read {_logEntriesRead} log entries");
 
+#endif
+
             // get the log message from the read line
             int logMessageIdx = entry.IndexOf(' ');
             if (logMessageIdx == -1)
@@ -150,9 +155,9 @@ namespace Bloxstrap.Integrations
                 return;
             }
 
-            string logMessage = entry[(logMessageIdx + 1)..];
+            ReadOnlySpan<char> logMessage = entry.AsSpan(logMessageIdx + 1);
 
-            if (logMessage.StartsWith(GameLeavingEntry))
+            if (logMessage.StartsWith(GameLeavingEntry, StringComparison.Ordinal))
             {
                 App.Logger.WriteLine(LOG_IDENT, "User is back into the desktop app");
                 
@@ -171,14 +176,14 @@ namespace Bloxstrap.Integrations
             {
                 // We are not in a game, nor are in the process of joining one
                 
-                if (logMessage.StartsWith(GameJoiningEntry))
+                if (logMessage.StartsWith(GameJoiningEntry, StringComparison.Ordinal))
                 {
-                    Match match = Regex.Match(logMessage, GameJoiningEntryPattern);
+                    Match match = Regex.Match(logMessage.ToString(), GameJoiningEntryPattern);
 
                     if (match.Groups.Count != 4)
                     {
                         App.Logger.WriteLine(LOG_IDENT, $"Failed to assert format for game join entry");
-                        App.Logger.WriteLine(LOG_IDENT, logMessage);
+                        App.Logger.WriteLine(LOG_IDENT, logMessage.ToString());
                         return;
                     }
 
@@ -209,21 +214,21 @@ namespace Bloxstrap.Integrations
             {
                 // We are not confirmed to be in a game, but we are in the process of joining one
 
-                if (logMessage.StartsWith(GameJoiningUniverseEntry))
+                if (logMessage.StartsWith(GameJoiningUniverseEntry, StringComparison.Ordinal))
                 {
-                    var match = Regex.Match(logMessage, GameJoiningUniversePattern);
+                    var match = Regex.Match(logMessage.ToString(), GameJoiningUniversePattern);
 
                     if (match.Groups.Count != 3)
                     {
                         App.Logger.WriteLine(LOG_IDENT, "Failed to assert format for game join universe entry");
-                        App.Logger.WriteLine(LOG_IDENT, logMessage);
+                        App.Logger.WriteLine(LOG_IDENT, logMessage.ToString());
                         return;
                     }
 
                     Data.UniverseId = Int64.Parse(match.Groups[1].Value);
                     Data.UserId = Int64.Parse(match.Groups[2].Value);
 
-                    var loadTimeMatch = Regex.Match(logMessage, GameJoinReferralPattern);
+                    var loadTimeMatch = Regex.Match(logMessage.ToString(), GameJoinReferralPattern);
 
                     if (loadTimeMatch.Groups.Count == 2)
                     {
@@ -241,14 +246,14 @@ namespace Bloxstrap.Integrations
                             Data.RootActivity = lastActivity.RootActivity ?? lastActivity;
                     }
                 }
-                else if (logMessage.StartsWith(GameJoiningUDMUXEntry))
+                else if (logMessage.StartsWith(GameJoiningUDMUXEntry, StringComparison.Ordinal))
                 {
-                    var match = Regex.Match(logMessage, GameJoiningUDMUXPattern);
+                    var match = Regex.Match(logMessage.ToString(), GameJoiningUDMUXPattern);
 
                     if (match.Groups.Count != 3 || match.Groups[2].Value != Data.MachineAddress)
                     {
                         App.Logger.WriteLine(LOG_IDENT, "Failed to assert format for game join UDMUX entry");
-                        App.Logger.WriteLine(LOG_IDENT, logMessage);
+                        App.Logger.WriteLine(LOG_IDENT, logMessage.ToString());
                         return;
                     }
 
@@ -259,12 +264,12 @@ namespace Bloxstrap.Integrations
 
                     App.Logger.WriteLine(LOG_IDENT, $"Server is UDMUX protected ({Data})");
                 }
-                else if (logMessage.StartsWith(GameJoinedEntry))
+                else if (logMessage.StartsWith(GameJoinedEntry, StringComparison.Ordinal))
                 {
                     App.Logger.WriteLine(LOG_IDENT, $"Joined Game ({Data})");
 
-                    InGame = true;
                     Data.TimeJoined = DateTime.Now;
+                    InGame = true;
 
                     OnGameJoin?.Invoke(this, EventArgs.Empty);
                 }
@@ -273,7 +278,7 @@ namespace Bloxstrap.Integrations
             {
                 // We are confirmed to be in a game
 
-                if (logMessage.StartsWith(GameDisconnectedEntry))
+                if (logMessage.StartsWith(GameDisconnectedEntry, StringComparison.Ordinal))
                 {
                     App.Logger.WriteLine(LOG_IDENT, $"Disconnected from Game ({Data})");
 
@@ -285,12 +290,12 @@ namespace Bloxstrap.Integrations
 
                     OnGameLeave?.Invoke(this, EventArgs.Empty);
                 }
-                else if (logMessage.StartsWith(GameTeleportingEntry))
+                else if (logMessage.StartsWith(GameTeleportingEntry, StringComparison.Ordinal))
                 {
                     App.Logger.WriteLine(LOG_IDENT, $"Initiating teleport to server ({Data})");
                     _teleportMarker = true;
 
-                    var joinTypeMatch = Regex.Match(logMessage, GameTeleportJoinTypePattern);
+                    var joinTypeMatch = Regex.Match(logMessage.ToString(), GameTeleportJoinTypePattern);
                     if (joinTypeMatch.Success && int.TryParse(joinTypeMatch.Groups[1].Value, out int joinTypeId))
                     {
                         var joinType = (ServerSessionJoinType)joinTypeId;
@@ -303,14 +308,14 @@ namespace Bloxstrap.Integrations
                         }
                     }
                 }
-                else if (logMessage.StartsWith(GameMessageEntry))
+                else if (logMessage.StartsWith(GameMessageEntry, StringComparison.Ordinal))
                 {
-                    var match = Regex.Match(logMessage, GameMessageEntryPattern);
+                    var match = Regex.Match(logMessage.ToString(), GameMessageEntryPattern);
 
                     if (match.Groups.Count != 2)
                     {
                         App.Logger.WriteLine(LOG_IDENT, $"Failed to assert format for RPC message entry");
-                        App.Logger.WriteLine(LOG_IDENT, logMessage);
+                        App.Logger.WriteLine(LOG_IDENT, logMessage.ToString());
                         return;
                     }
 
@@ -383,10 +388,5 @@ namespace Bloxstrap.Integrations
             }
         }
 
-        public void Dispose()
-        {
-            IsDisposed = true;
-            GC.SuppressFinalize(this);
-        }
     }
 }

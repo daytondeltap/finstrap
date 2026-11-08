@@ -249,7 +249,9 @@ namespace Bloxstrap
 
             await SafeGetLatestVersionInfo();
 
-            CleanupVersionsFolder(); // cleanup after background updater
+            bool preserveSessions = !IsStudioLaunch && App.Settings.Prop.MultiInstance && HasRunningPlayer();
+            if (!preserveSessions)
+                CleanupVersionsFolder(); // cleanup after background updater
 
             bool allModificationsApplied = true;
 
@@ -257,6 +259,14 @@ namespace Bloxstrap
             {
                 if (AppData.DistributionState.VersionGuid != _latestVersionGuid || _mustUpgrade)
                 {
+                    if (preserveSessions)
+                    {
+                        App.Logger.WriteLine(LOG_IDENT, "Deferring the Roblox update while Player sessions are running.");
+                        if (!App.LaunchSettings.QuietFlag.Active)
+                            Frontend.ShowMessageBox("Roblox needs an update. Close your running Roblox clients before launching another session.", MessageBoxImage.Information);
+                        return;
+                    }
+
                     bool backgroundUpdaterMutexOpen = !App.LaunchSettings.BackgroundUpdaterFlag.Active && Utilities.DoesMutexExist(BackgroundUpdaterMutexName);
 
                     App.Logger.WriteLine(LOG_IDENT, $"Background updater running: {backgroundUpdaterMutexOpen}");
@@ -637,18 +647,29 @@ namespace Bloxstrap
 
             App.Logger.WriteLine(LOG_IDENT, $"Started Roblox (PID {_appPid}), waiting for log file");
 
-            logCreatedEvent.WaitOne(TimeSpan.FromSeconds(15));
-
-            if (String.IsNullOrEmpty(logFileName))
+            var watcherData = new WatcherData
             {
-                App.Logger.WriteLine(LOG_IDENT, "Unable to identify log file");
-                Frontend.ShowPlayerErrorDialog();
-                return;
-            }
-            else
+                ProcessId = _appPid,
+                ProcessStartTimeUtc = startTime,
+                MultiInstance = multiInstance
+            };
+            using (var player = IsStudioLaunch ? null : PlayerLifetime.Open(watcherData))
             {
-                App.Logger.WriteLine(LOG_IDENT, $"Got log file as {logFileName}");
+                WaitHandle cancel = _cancelTokenSource.Token.WaitHandle;
+                WaitHandle[] signals = player is null
+                    ? new WaitHandle[] { logCreatedEvent, cancel }
+                    : new WaitHandle[] { logCreatedEvent, cancel, player };
+                int result = WaitHandle.WaitAny(signals, TimeSpan.FromSeconds(15));
+                if (_cancelTokenSource.IsCancellationRequested)
+                    return;
+                if (result != 0 || player?.WaitOne(0) == true || String.IsNullOrEmpty(logFileName))
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Roblox exited or did not create a log in time.");
+                    Frontend.ShowPlayerErrorDialog();
+                    return;
+                }
             }
+            App.Logger.WriteLine(LOG_IDENT, $"Got log file as {logFileName}");
 
             if (IsStudioLaunch)
             {
@@ -667,7 +688,7 @@ namespace Bloxstrap
 
                 try
                 {
-                    var process = Process.Start(new ProcessStartInfo
+                    using var process = Process.Start(new ProcessStartInfo
                     {
                         FileName = integration.Location,
                         Arguments = integration.LaunchArgs.Replace("\r\n", " "),
@@ -688,14 +709,8 @@ namespace Bloxstrap
             }
 
             using var ready = multiInstance ? MultiInstanceLease.CreateReadyEvent(_appPid) : null;
-            var watcherData = new WatcherData
-            {
-                ProcessId = _appPid,
-                ProcessStartTimeUtc = startTime,
-                MultiInstance = multiInstance,
-                LogFile = logFileName,
-                AutoclosePids = autoclosePids
-            };
+            watcherData.LogFile = logFileName;
+            watcherData.AutoclosePids = autoclosePids;
 
             string watcherDataArg = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(watcherData)));
             string args = $"-watcher {watcherDataArg}";
@@ -710,6 +725,14 @@ namespace Bloxstrap
 
             // allow for window to show, since the log is created pretty far beforehand
             Thread.Sleep(1000);
+        }
+
+        private static bool HasRunningPlayer()
+        {
+            Process[] players = Process.GetProcessesByName(App.RobloxPlayerAppName);
+            foreach (Process player in players)
+                player.Dispose();
+            return players.Length > 0;
         }
 
         private static MultiInstanceLease? TryAcquireMultiInstanceLease()
