@@ -126,15 +126,15 @@
         <TextBlock Text="Roblox sessions" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
         <controls:OptionControl Header="Multi-instance launching (experimental)"
                                 Description="Start with Roblox closed. Client updates can affect whether several clients stay open.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.MultiInstance, ElementName=IntegrationsPageView}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.MultiInstance, ElementName=IntegrationsPageView, Mode=TwoWay}" />
         </controls:OptionControl>
         <controls:OptionControl Header="Keep computer awake"
                                 Description="Prevent automatic Windows sleep while a Finstrap Roblox session is open.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.KeepComputerAwake, ElementName=IntegrationsPageView}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.KeepComputerAwake, ElementName=IntegrationsPageView, Mode=TwoWay}" />
         </controls:OptionControl>
         <controls:OptionControl Header="15-minute anti-idle preset (experimental)"
                                 Description="While the desktop is idle, send Space to the foreground Roblox game only. Space may cause your character to jump.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.ForegroundAntiIdle, ElementName=IntegrationsPageView}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.ForegroundAntiIdle, ElementName=IntegrationsPageView, Mode=TwoWay}" />
         </controls:OptionControl>
 
         <TextBlock Text="Account profiles and TinyTask recordings" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
@@ -165,9 +165,9 @@
             <TextBlock Text="Profile name" />
             <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" />
             <TextBlock Text="Roblox user ID (number in the profile URL)" />
-            <ui:TextBox x:Name="ProfileUserId" Text="{Binding UserId, ValidatesOnExceptions=True}" Margin="0,4,0,8" />
+            <ui:TextBox x:Name="ProfileUserId" Text="{Binding UserId, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" />
             <TextBlock Text="Experience place ID (0 opens Roblox home)" />
-            <ui:TextBox x:Name="ProfilePlaceId" Text="{Binding PlaceId, ValidatesOnExceptions=True}" Margin="0,4,0,8" />
+            <ui:TextBox x:Name="ProfilePlaceId" Text="{Binding PlaceId, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" />
             <TextBlock Text="TinyTask recording" />
             <WrapPanel Margin="0,4,0,8">
                 <ui:Button Content="Choose .rec file" Icon="Folder24" Click="ChooseRecording_Click" Margin="0,0,8,0" />

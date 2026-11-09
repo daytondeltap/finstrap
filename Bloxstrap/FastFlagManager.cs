@@ -136,8 +136,9 @@ namespace Bloxstrap
 
             base.Save();
 
-            // clone the dictionary
-            OriginalProp = new(Prop);
+            // Only mark edits as saved after the write succeeds.
+            if (LastSaveSucceeded)
+                OriginalProp = new(Prop);
         }
 
         public override bool Load(bool alertFailure = true)

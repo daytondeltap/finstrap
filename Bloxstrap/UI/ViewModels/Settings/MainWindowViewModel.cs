@@ -46,6 +46,9 @@ namespace Bloxstrap.UI.ViewModels.Settings
             App.State.Save();
             App.FastFlags.Save();
 
+            if (!App.Settings.LastSaveSucceeded || !App.State.LastSaveSucceeded || !App.FastFlags.LastSaveSucceeded)
+                return;
+
             foreach (var pair in App.PendingSettingTasks)
             {
                 var task = pair.Value;

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Bloxstrap/JsonManager.cs" Link="JsonManager.cs" />
+    <Compile Include="../Bloxstrap/Utility/MD5Hash.cs" Link="MD5Hash.cs" />
+    <Compile Include="../Bloxstrap/Integrations/AccountLaunchTarget.cs" Link="AccountLaunchTarget.cs" />
+    <Compile Include="../Bloxstrap/Integrations/RobloxAccountLaunch.cs" Link="RobloxAccountLaunch.cs" />
+    <Compile Include="../Bloxstrap/Integrations/RobloxAccountSession.cs" Link="RobloxAccountSession.cs" />
+    <Compile Include="../Bloxstrap/Integrations/MultiInstanceLease.cs" Link="MultiInstanceLease.cs" />
+  </ItemGroup>
+</Project>

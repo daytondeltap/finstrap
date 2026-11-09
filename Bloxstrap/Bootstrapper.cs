@@ -353,7 +353,11 @@ namespace Bloxstrap
                         _accountUserId = account.UserId;
                         _keepDesktopApp = account.OpenDesktopHome;
                         _launchCommandLine = account.Arguments;
-                        try { StartRoblox(keepLaunchLock: true); }
+                        try
+                        {
+                            if (!StartRoblox(keepLaunchLock: true))
+                                break;
+                        }
                         finally { _launchCommandLine = ""; }
                     }
                 }
@@ -606,7 +610,7 @@ namespace Bloxstrap
             }
         }
 
-        private void StartRoblox(bool keepLaunchLock = false)
+        private bool StartRoblox(bool keepLaunchLock = false)
         {
             const string LOG_IDENT = "Bootstrapper::StartRoblox";
 
@@ -615,7 +619,7 @@ namespace Bloxstrap
             bool multiInstance = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
             using var multiLease = multiInstance && !keepLaunchLock ? TryAcquireMultiInstanceLease() : null;
             if (multiInstance && !keepLaunchLock && multiLease is null)
-                return;
+                return false;
 
             var startInfo = new ProcessStartInfo()
             {
@@ -632,7 +636,7 @@ namespace Bloxstrap
             else if (_launchMode == LaunchMode.StudioAuth)
             {
                 Process.Start(startInfo);
-                return;
+                return true;
             }
 
             string? logFileName = null;
@@ -676,7 +680,7 @@ namespace Bloxstrap
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
                 // 1223 = ERROR_CANCELLED, gets thrown if a UAC prompt is cancelled
-                return;
+                return false;
             }
             catch (Exception)
             {
@@ -703,12 +707,12 @@ namespace Bloxstrap
                     : new WaitHandle[] { logCreatedEvent, cancel, player };
                 int result = WaitHandle.WaitAny(signals, TimeSpan.FromSeconds(15));
                 if (_cancelTokenSource.IsCancellationRequested)
-                    return;
+                    return false;
                 if (result != 0 || player?.WaitOne(0) == true || String.IsNullOrEmpty(logFileName))
                 {
                     App.Logger.WriteLine(LOG_IDENT, "Roblox exited or did not create a log in time.");
                     Frontend.ShowPlayerErrorDialog();
-                    return;
+                    return false;
                 }
             }
             App.Logger.WriteLine(LOG_IDENT, $"Got log file as {logFileName}");
@@ -716,7 +720,7 @@ namespace Bloxstrap
             if (IsStudioLaunch)
             {
                 _mutex?.ReleaseAsync();
-                return;
+                return true;
             }
 
             var autoclosePids = new List<int>();
@@ -750,7 +754,7 @@ namespace Bloxstrap
                     autoclosePids.Add(pid);
             }
 
-            using var ready = multiInstance ? MultiInstanceLease.CreateReadyEvent(_appPid) : null;
+            using var ready = MultiInstanceLease.CreateReadyEvent(_appPid);
             watcherData.LogFile = logFileName;
             watcherData.AutoclosePids = autoclosePids;
 
@@ -760,12 +764,12 @@ namespace Bloxstrap
                 args += " -testmode";
 
             using var watcher = Process.Start(Paths.Process, args);
-            if (ready is not null && !ready.WaitOne(TimeSpan.FromSeconds(12)))
+            if (!ready.WaitOne(TimeSpan.FromSeconds(12)))
             {
-                App.Logger.WriteLine(LOG_IDENT, "The multi-instance watcher did not confirm startup.");
-                Frontend.ShowMessageBox("Roblox started, but Finstrap could not verify multi-instance tracking for this window.",
+                App.Logger.WriteLine(LOG_IDENT, "The session watcher did not confirm startup.");
+                Frontend.ShowMessageBox("Roblox started, but Finstrap could not verify session tracking for this window. The launch queue has stopped.",
                     MessageBoxImage.Warning);
-                return;
+                return false;
             }
 
             if (!keepLaunchLock)
@@ -776,6 +780,7 @@ namespace Bloxstrap
 
             // allow for window to show, since the log is created pretty far beforehand
             Thread.Sleep(1000);
+            return true;
         }
 
         private static MultiInstanceLease? TryAcquireMultiInstanceLease()
