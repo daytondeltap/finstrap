@@ -15,6 +15,10 @@
         /// </summary>
         public string? LastFileHash { get; private set; }
 
+        private string _savedSnapshot = JsonSerializer.Serialize(new T());
+        public bool HasUnsavedChanges => JsonSerializer.Serialize(Prop) != _savedSnapshot;
+        public bool LastSaveSucceeded { get; private set; }
+
         public bool Loaded { get; protected set; } = false;
 
         public virtual string ClassName { get; }
@@ -44,14 +48,15 @@
                 {
                     string contents = File.ReadAllText(FileLocation);
 
+                    LastFileHash = MD5Hash.FromString(contents);
                     T? settings = JsonSerializer.Deserialize<T>(contents);
 
                     if (settings is null)
                         throw new ArgumentNullException("Deserialization returned null");
 
                     _prop = settings;
+                    _savedSnapshot = JsonSerializer.Serialize(settings);
                     Loaded = true;
-                    LastFileHash = MD5Hash.FromString(contents);
 
                     App.Logger.WriteLine(LOG_IDENT, "Loaded successfully!");
 
@@ -69,6 +74,11 @@
             {
                 App.Logger.WriteLine(LOG_IDENT, "Failed to load!");
                 App.Logger.WriteException(LOG_IDENT, ex);
+
+                // A temporary read/access failure is not a corrupt configuration.
+                // Never replace settings with defaults when we could not read them.
+                if (ex is IOException or UnauthorizedAccessException)
+                    return false;
 
                 if (alertFailure)
                 {
@@ -107,13 +117,27 @@
             
             App.Logger.WriteLine(LOG_IDENT, $"Saving to {FileLocation}...");
 
-            Directory.CreateDirectory(Path.GetDirectoryName(FileLocation)!);
+            LastSaveSucceeded = false;
+            string temporaryFile = FileLocation + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
+            using var writeLock = new Mutex(false, "Finstrap-Config-" + MD5Hash.FromString(Path.GetFullPath(FileLocation).ToUpperInvariant()));
+            bool ownsLock = false;
             try
             {
+                try { ownsLock = writeLock.WaitOne(TimeSpan.FromSeconds(10)); }
+                catch (AbandonedMutexException) { ownsLock = true; }
+                if (!ownsLock)
+                    throw new IOException("Another Finstrap window is saving this file. Please retry.");
+                if (Loaded && LastFileHash != (File.Exists(FileLocation) ? MD5Hash.FromFile(FileLocation) : null))
+                    throw new IOException("This file was changed by another Finstrap window. Reopen settings before editing again to preserve those changes.");
+
                 string contents = JsonSerializer.Serialize(Prop, new JsonSerializerOptions { WriteIndented = true });
 
-                File.WriteAllText(FileLocation, contents);
+                Directory.CreateDirectory(Path.GetDirectoryName(FileLocation)!);
+                File.WriteAllText(temporaryFile, contents);
+                File.Move(temporaryFile, FileLocation, overwrite: true);
+                _savedSnapshot = JsonSerializer.Serialize(Prop);
+                LastSaveSucceeded = true;
 
                 LastFileHash = MD5Hash.FromString(contents);
             }
@@ -126,6 +150,15 @@
                 Frontend.ShowMessageBox(errorMessage, System.Windows.MessageBoxImage.Warning);
 
                 return;
+            }
+
+            finally
+            {
+                if (ownsLock)
+                    writeLock.ReleaseMutex();
+                try { File.Delete(temporaryFile); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
 
             App.Logger.WriteLine(LOG_IDENT, "Save complete!");

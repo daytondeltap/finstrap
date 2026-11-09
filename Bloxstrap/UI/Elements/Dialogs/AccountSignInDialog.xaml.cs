@@ -9,19 +9,6 @@ namespace Bloxstrap.UI.Elements.Dialogs
     public partial class AccountSignInDialog
     {
         private const string RobloxOrigin = "https://www.roblox.com";
-        private const string TicketUrl = "https://auth.roblox.com/v1/authentication-ticket/";
-        private const string ShareUrl = "https://apis.roblox.com/sharelinks/v1/resolve-link";
-        private const string ReadIdentity = @"(async () => {
-            if (location.origin !== 'https://www.roblox.com') return null;
-            const response = await fetch('https://users.roblox.com/v1/users/authenticated', {
-                credentials: 'include', redirect: 'error', signal: AbortSignal.timeout(8000)
-            });
-            if (response.status === 401) return null;
-            if (!response.ok) throw new Error('Roblox account request failed');
-            const user = await response.json();
-            return { id: user.id, name: user.name };
-        })()";
-
         private readonly SessionProfile? _profile;
         private readonly AccountLaunchTarget _target;
         private readonly DispatcherTimer _signInTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -31,7 +18,6 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private bool _checking;
         private bool _autoCheck = true;
         private bool _signInStarted;
-        private string? _requestUrl;
 
         internal RobloxAccountLaunch? Result { get; private set; }
 
@@ -39,17 +25,17 @@ namespace Bloxstrap.UI.Elements.Dialogs
         {
             _profile = profile;
             _target = target;
-            _signInStarted = profile?.LaunchProfileKey is null;
             _profileKey = profile?.LaunchProfileKey is string key && Guid.TryParseExact(key, "N", out _)
                 ? key
                 : Guid.NewGuid().ToString("N");
+            _signInStarted = _profileKey != profile?.LaunchProfileKey;
             InitializeComponent();
             _signInTimer.Tick += async (_, _) =>
             {
                 if (_autoCheck && _signInStarted)
                     await CheckAccountAsync();
             };
-            if (profile?.LaunchProfileKey is not null)
+            if (!_signInStarted)
             {
                 Opacity = 0;
                 ShowActivated = false;
@@ -90,11 +76,6 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 web.NavigationStarting += (_, args) => args.Cancel = !IsAllowedPage(args.Uri);
                 web.NewWindowRequested += (_, args) => args.Handled = true;
                 web.LaunchingExternalUriScheme += (_, args) => args.Cancel = true;
-                web.AddWebResourceRequestedFilter(TicketUrl, CoreWebView2WebResourceContext.Document,
-                    CoreWebView2WebResourceRequestSourceKinds.All);
-                web.AddWebResourceRequestedFilter(ShareUrl, CoreWebView2WebResourceContext.Document,
-                    CoreWebView2WebResourceRequestSourceKinds.All);
-                web.WebResourceRequested += SetRequestOrigin;
                 web.NavigationCompleted += OnNavigationCompleted;
                 web.Navigate(RobloxOrigin + (_signInStarted ? "/login" : "/home"));
                 _signInTimer.Start();
@@ -114,22 +95,12 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private void SetRequestOrigin(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
-        {
-            // Set these after Chromium prepares the native navigation request.
-            if (e.Request.Uri != _requestUrl || e.Request.Method != "POST")
-                return;
-            e.Request.Headers.SetHeader("Origin", RobloxOrigin);
-            e.Request.Headers.SetHeader("Referer", RobloxOrigin + "/");
-        }
-
         private bool IsAllowedPage(string address)
         {
             if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort || uri.UserInfo.Length != 0)
                 return false;
-            return uri.Host is "www.roblox.com" or "roblox.com" ||
-                uri.AbsoluteUri == _requestUrl;
+            return uri.Host is "www.roblox.com" or "roblox.com";
         }
 
         private async void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -167,13 +138,20 @@ namespace Bloxstrap.UI.Elements.Dialogs
             ContinueButton.IsEnabled = false;
             try
             {
-                string request = JsonSerializer.Serialize(new { expression = ReadIdentity, awaitPromise = true, returnByValue = true });
-                string json = await Browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate", request)
-                    .WaitAsync(TimeSpan.FromSeconds(10), _closed.Token);
-                using var response = JsonDocument.Parse(json);
-                if (!response.RootElement.GetProperty("result").TryGetProperty("value", out var identity))
-                    throw new InvalidOperationException();
-                if (identity.ValueKind == JsonValueKind.Null)
+                // Read this WebView profile's cookies without navigating away from sign-in.
+                // Redirects are disabled so authentication cannot be forwarded to another host.
+                using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+                foreach (var cookie in await Browser.CoreWebView2.CookieManager.GetCookiesAsync(RobloxOrigin)
+                    .WaitAsync(TimeSpan.FromSeconds(10), _closed.Token))
+                {
+                    if (cookie.Name == ".ROBLOSECURITY")
+                        handler.CookieContainer.Add(new Cookie(cookie.Name, cookie.Value, "/", ".roblox.com")
+                            { Secure = true, HttpOnly = true });
+                }
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+                var session = new RobloxAccountSession(client);
+                var identity = await session.GetIdentityAsync(_closed.Token);
+                if (identity is null)
                 {
                     ShowStatus("Finish signing in and verifying your account on the Roblox page.");
                     if (!_signInStarted)
@@ -184,8 +162,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     return;
                 }
 
-                long userId = identity.GetProperty("id").GetInt64();
-                string username = identity.GetProperty("name").GetString() ?? "";
+                long userId = identity.Value.Id;
+                string username = identity.Value.Name;
                 if (userId <= 0 || String.IsNullOrWhiteSpace(username))
                     throw new InvalidOperationException();
                 if (_profile is not null && _profile.UserId != userId)
@@ -195,20 +173,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     return;
                 }
 
-                AccountLaunchTarget target = _target;
-                if (target.ShareCode is not null)
-                {
-                    byte[] payload = JsonSerializer.SerializeToUtf8Bytes(new { linkId = target.ShareCode, linkType = "Server" });
-                    var share = await PostAsAccountAsync(ShareUrl, payload);
-                    if (share.Status is < 200 or >= 300 || share.Body is null)
-                        throw new FormatException("Roblox could not open this private-server link for this account. Check access and whether the link is still active.");
-                    target = AccountLaunchTarget.FromPrivateShare(share.Body);
-                }
-
-                var launch = await PostAsAccountAsync(TicketUrl, null);
-                if (launch.Status != 200 || String.IsNullOrEmpty(launch.Ticket))
-                    throw new InvalidOperationException();
-                Result = new RobloxAccountLaunch(userId, username, _profileKey, launch.Ticket, target);
+                var target = await session.ResolveShareAsync(_target, _closed.Token);
+                string ticket = await session.GetTicketAsync(_closed.Token);
+                Result = new RobloxAccountLaunch(userId, username, _profileKey, ticket, target);
                 DialogResult = true;
             }
             catch (OperationCanceledException) when (_closed.IsCancellationRequested) { }
@@ -234,75 +201,6 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if (!_closed.IsCancellationRequested && Browser.Source?.Host != "www.roblox.com")
                 Browser.CoreWebView2.Navigate(RobloxOrigin + "/home");
             ShowStatus(message);
-        }
-
-        private async Task<RobloxResponse> PostAsAccountAsync(string url, byte[]? payload)
-        {
-            _requestUrl = url;
-            Browser.IsEnabled = false;
-            try
-            {
-                var response = await RequestAsync(url, payload, null);
-                if (response.Status == 403 && !String.IsNullOrEmpty(response.Csrf))
-                    response = await RequestAsync(url, payload, response.Csrf);
-                return response;
-            }
-            finally
-            {
-                _requestUrl = null;
-                if (!_closed.IsCancellationRequested)
-                    Browser.IsEnabled = true;
-            }
-        }
-
-        private sealed record RobloxResponse(int Status, string? Csrf, string? Ticket, string? Body);
-
-        private async Task<RobloxResponse> RequestAsync(string url, byte[]? payload, string? csrf)
-        {
-            CoreWebView2 web = Browser.CoreWebView2;
-            var completion = new TaskCompletionSource<RobloxResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
-            web.WebResourceResponseReceived += OnResponse;
-            try
-            {
-                string headers = payload is null ? "RBXAuthenticationNegotiation: 1\r\n" : "Content-Type: application/json\r\n";
-                if (csrf is not null && !csrf.Contains('\r') && !csrf.Contains('\n'))
-                    headers += $"X-CSRF-TOKEN: {csrf}\r\n";
-                using var body = new MemoryStream(payload ?? Array.Empty<byte>());
-                web.NavigateWithWebResourceRequest(_environment!.CreateWebResourceRequest(url, "POST", body, headers));
-                return await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), _closed.Token);
-            }
-            finally
-            {
-                web.WebResourceResponseReceived -= OnResponse;
-            }
-
-            async void OnResponse(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
-            {
-                if (e.Request.Method != "POST" || e.Request.Uri != url)
-                    return;
-                try
-                {
-                    var headers = e.Response.Headers;
-                    string? content = null;
-                    if (payload is not null && e.Response.StatusCode is >= 200 and < 300)
-                    {
-                        using var stream = await e.Response.GetContentAsync();
-                        if (stream is not null)
-                        {
-                            using var reader = new StreamReader(stream);
-                            content = await reader.ReadToEndAsync();
-                        }
-                    }
-                    completion.TrySetResult(new(e.Response.StatusCode,
-                        headers.Contains("x-csrf-token") ? headers.GetHeader("x-csrf-token") : null,
-                        payload is null && headers.Contains("rbx-authentication-ticket")
-                            ? headers.GetHeader("rbx-authentication-ticket") : null, content));
-                }
-                catch (Exception ex)
-                {
-                    completion.TrySetException(ex);
-                }
-            }
         }
 
         private void ShowStatus(string message)

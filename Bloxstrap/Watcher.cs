@@ -111,7 +111,7 @@ namespace Bloxstrap
             }
 
             _notifyIcon = new(this);
-            if (_watcherData.MultiInstance && IsPlayerRunning())
+            if (IsPlayerRunning())
             {
                 using var ready = MultiInstanceLease.CreateReadyEvent(ProcessId);
                 ready.Set();

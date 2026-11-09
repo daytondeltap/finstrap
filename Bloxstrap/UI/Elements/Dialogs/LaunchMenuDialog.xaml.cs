@@ -111,7 +111,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     ? started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
                     : $"Started {started} of {accounts.Count} requested Roblox clients.";
             }
-            catch (FormatException ex)
+            catch (Exception ex) when (ex is FormatException or IOException)
             {
                 AccountStatus.Text = ex.Message;
             }
@@ -146,7 +146,12 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if (saved.LaunchProfileKey != launch.ProfileKey)
             {
                 saved.LaunchProfileKey = launch.ProfileKey;
+            }
+            if (App.Settings.HasUnsavedChanges)
+            {
                 App.Settings.Save();
+                if (!App.Settings.LastSaveSucceeded)
+                    throw new IOException("The account could not be saved. Reopen Finstrap and try again.");
             }
             return launch;
         }
