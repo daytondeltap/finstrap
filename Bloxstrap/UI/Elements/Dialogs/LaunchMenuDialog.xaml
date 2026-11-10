@@ -4,7 +4,7 @@
  xmlns:base="clr-namespace:Bloxstrap.UI.Elements.Base"
  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
  Title="Finstrap · Accounts" Width="1020" Height="760" MinWidth="850" MinHeight="600"
- Background="{ui:ThemeResource ApplicationBackgroundBrush}" WindowStartupLocation="CenterScreen">
+ Background="#F4F6FA" Foreground="#172033" WindowStartupLocation="CenterScreen">
  <ScrollViewer VerticalScrollBarVisibility="Auto"><DockPanel Margin="24">
   <StackPanel DockPanel.Dock="Top">
    <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
