@@ -44,6 +44,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 Check(window.DashboardSurface.Background is SolidColorBrush background && background.Color.A == 255, "Dashboard background must be opaque for readable labels.");
                 var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
                 bitmap.Render(window);
+                byte[] pixel = new byte[4];
+                bitmap.CopyPixels(new Int32Rect(50, 90, 1, 1), pixel, 4, 0);
+                Check(pixel[3] == 255, "Rendered dashboard surface must be opaque.");
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
                 using (var output = File.Create(Path.Combine(directory, "dashboard.png"))) encoder.Save(output);
                 File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: dashboard opened, cards bound, group saved, accounts reordered, queue cancelled, screenshot rendered.");

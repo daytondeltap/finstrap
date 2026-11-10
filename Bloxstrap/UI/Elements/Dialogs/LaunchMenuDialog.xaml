@@ -5,7 +5,7 @@
  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
  Title="Finstrap · Accounts" Width="1020" Height="760" MinWidth="850" MinHeight="600"
  Background="#F4F6FA" Foreground="#172033" WindowStartupLocation="CenterScreen">
- <ScrollViewer x:Name="DashboardSurface" Background="#F4F6FA" TextElement.Foreground="#172033" VerticalScrollBarVisibility="Auto"><DockPanel Margin="24">
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><Border x:Name="DashboardSurface" Background="#F4F6FA" TextElement.Foreground="#172033" Padding="24"><DockPanel>
   <StackPanel DockPanel.Dock="Top">
    <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
    <TextBlock Text="Launch together. Keep track of every session." Margin="0,4,0,16"/>
@@ -66,5 +66,5 @@
     <Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
    </StackPanel>
   </Grid>
- </DockPanel></ScrollViewer>
+ </DockPanel></Border></ScrollViewer>
 </base:WpfUiWindow>
