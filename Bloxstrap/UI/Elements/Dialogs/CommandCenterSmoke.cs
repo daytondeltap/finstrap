@@ -1,7 +1,13 @@
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Bloxstrap.Integrations;
+using Bloxstrap.UI.Elements.Settings.Pages;
+using Bloxstrap.UI.ViewModels.Settings;
+using Wpf.Ui.Controls;
 
 namespace Bloxstrap.UI.Elements.Dialogs
 {
@@ -11,6 +17,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
         internal static async Task RunSmokeAsync(string directory)
         {
             SmokeMode = true;
+            await VerifySessionSettingsAsync();
             var first = new SessionProfile { UserId = 123, Username = "SmokeOne", Name = "First account" };
             var second = new SessionProfile { UserId = 456, Username = "SmokeTwo", Name = "Second account" };
             App.Settings.Prop.Theme = Enums.Theme.Dark;
@@ -24,6 +31,11 @@ namespace Bloxstrap.UI.Elements.Dialogs
             {
                 void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); }
                 Check(window.Cards.Count() == 2, "Account cards did not load.");
+                string profileKey = Guid.NewGuid().ToString("N");
+                window.SaveVerifiedAccount(first.UserId, first.Username, profileKey, new());
+                var savedSettings = new JsonManager<Models.Persistable.Settings>();
+                Check(savedSettings.Load() && savedSettings.Prop.SessionProfiles.Single(p => p.UserId == first.UserId).LaunchProfileKey == profileKey,
+                    "A verified account must be saved before requesting its launch ticket.");
                 foreach (var card in window.Cards) window.AccountsList.SelectedItems.Add(card);
                 window.GroupName.Text = "Smoke group";
                 window.AccountDestination.Text = "456";
@@ -76,13 +88,41 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     encoder.Save(output);
                 }
 
-                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: dashboard opened, cards bound, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
+                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: session switches persisted and reloaded, verified account saved, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
             }
             finally
             {
                 App.Settings.Prop.Theme = Enums.Theme.Dark;
                 window.Close();
             }
+        }
+
+        private static async Task VerifySessionSettingsAsync()
+        {
+            static IEnumerable<ToggleSwitch> GetSessionSwitches(IntegrationsPage page) =>
+                new[] { page.MultiInstanceOption, page.KeepAwakeOption, page.AntiIdleOption }.Select(option => (ToggleSwitch)option.InnerContent);
+
+            var page = new IntegrationsPage();
+            var host = new Window { Content = new Frame { Content = page } };
+            host.Show();
+            try
+            {
+                await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                foreach (var toggle in GetSessionSwitches(page))
+                    ((IToggleProvider)new ToggleButtonAutomationPeer(toggle).GetPattern(PatternInterface.Toggle)).Toggle();
+
+                new MainWindowViewModel().SaveSettingsCommand.Execute(null);
+                if (!App.Settings.LastSaveSucceeded || !App.Settings.Load() || !App.Settings.Prop.MultiInstance ||
+                    !App.Settings.Prop.KeepComputerAwake || !App.Settings.Prop.ForegroundAntiIdle)
+                    throw new InvalidOperationException("Roblox session switches did not survive a save and reload.");
+
+                var reopened = new IntegrationsPage();
+                host.Content = new Frame { Content = reopened };
+                await host.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                if (GetSessionSwitches(reopened).Any(toggle => toggle.IsChecked != true))
+                    throw new InvalidOperationException("Saved Roblox session switches did not appear on the reopened settings page.");
+            }
+            finally { host.Close(); }
         }
     }
 }

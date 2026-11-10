@@ -19,12 +19,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private bool _autoCheck = true;
         private bool _signInStarted;
 
-        internal (long Id, string Username, string Key)? LinkedAccount { get; private set; }
+        private long? _verifiedUserId;
+        private readonly Action<long, string, string> _saveAccount;
         private readonly bool _linkOnly;
         internal RobloxAccountLaunch? Result { get; private set; }
 
-        internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target, bool linkOnly = false)
+        internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target,
+            Action<long, string, string> saveAccount, bool linkOnly = false)
         {
+            _saveAccount = saveAccount;
             _linkOnly = linkOnly;
             _profile = profile;
             _target = target;
@@ -134,7 +137,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
 
         private async Task CheckAccountAsync()
         {
-            if (_checking || _closed.IsCancellationRequested || Browser.Source?.Host != "www.roblox.com")
+            if (_checking || _closed.IsCancellationRequested || Browser.Source is not Uri source || !IsAllowedPage(source.AbsoluteUri))
                 return;
 
             _checking = true;
@@ -169,14 +172,20 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 string username = identity.Value.Name;
                 if (userId <= 0 || String.IsNullOrWhiteSpace(username))
                     throw new InvalidOperationException();
-                if (_profile is not null && _profile.UserId != userId)
+                if ((_profile?.UserId ?? _verifiedUserId) is long expectedId && expectedId != userId)
                 {
                     _autoCheck = false;
-                    ShowStatus($"This window is signed in as {username}. Switch to {_profile.Name} in Roblox, then click Continue.");
+                    ShowStatus($"This window is signed in as {username}. Switch back to {_profile?.Name ?? "the linked account"}, then click Continue.");
                     return;
                 }
 
-                LinkedAccount = (userId, username, _profileKey);
+                try { _saveAccount(userId, username, _profileKey); }
+                catch (IOException)
+                {
+                    ShowLaunchError("Finstrap could not save this account. Reopen Finstrap and try again.");
+                    return;
+                }
+                _verifiedUserId = userId;
                 if (_linkOnly)
                 {
                     DialogResult = true;
@@ -190,11 +199,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
             catch (OperationCanceledException) when (_closed.IsCancellationRequested) { }
             catch (FormatException ex)
             {
-                ShowLaunchError(ex.Message);
+                ShowLaunchError("Account saved. " + ex.Message);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                ShowLaunchError("Roblox did not complete the desktop sign-in handoff. Check your sign-in and click Continue to retry.");
+                string reason = ex is HttpRequestException { StatusCode: { } status } ? $"HTTP {(int)status}" : ex.GetType().Name;
+                App.Logger.WriteLine("AccountSignIn", $"Roblox sign-in or launch request failed ({reason}).");
+                ShowLaunchError(_verifiedUserId.HasValue
+                    ? $"Account saved. Roblox could not start the desktop session ({reason}). Click Continue to retry, or close and launch from your saved accounts later."
+                    : $"Roblox could not verify this sign-in ({reason}). Finish signing in and click Continue to retry.");
             }
             finally
             {
@@ -207,8 +220,6 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private void ShowLaunchError(string message)
         {
             _autoCheck = false;
-            if (!_closed.IsCancellationRequested && Browser.Source?.Host != "www.roblox.com")
-                Browser.CoreWebView2.Navigate(RobloxOrigin + "/home");
             ShowStatus(message);
         }
 

@@ -55,6 +55,22 @@ namespace Bloxstrap.UI.Elements.Dialogs
 
         private void AddAccount_Click(object sender, RoutedEventArgs e) => LinkAccount(null);
 
+        private async void AddAndLaunch_Click(object sender, RoutedEventArgs e)
+        {
+            var players = Process.GetProcessesByName(App.RobloxPlayerAppName);
+            foreach (var player in players)
+                player.Dispose();
+
+            if (!App.Settings.Prop.MultiInstance && players.Length > 0)
+            {
+                if (LinkAccount(null))
+                    AccountStatus.Text = "Enable multi-instance launching in Settings → Integrations to launch another Roblox account.";
+                return;
+            }
+
+            await LaunchAccountsAsync(new SessionProfile?[] { null });
+        }
+
         private async void LaunchSelected_Click(object sender, RoutedEventArgs e) =>
             await ConfirmAndLaunchAsync(Cards.Where(c => AccountsList.SelectedItems.Contains(c)).Select(c => c.Profile).ToArray());
 
@@ -157,31 +173,47 @@ namespace Bloxstrap.UI.Elements.Dialogs
 
         private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target)
         {
-            var dialog = new AccountSignInDialog(profile, target) { Owner = this };
+            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target)) { Owner = this };
             if (dialog.ShowDialog() != true || dialog.Result is not { } launch)
                 return null;
 
+            return ActiveSessions.Any(session => session.UserId == launch.UserId) ? null : launch;
+        }
+
+        private void SaveVerifiedAccount(long userId, string username, string profileKey, AccountLaunchTarget target)
+        {
             var profiles = App.Settings.Prop.SessionProfiles;
-            var saved = profiles.FirstOrDefault(item => item.UserId == launch.UserId);
+            var saved = profiles.FirstOrDefault(item => item.UserId == userId);
+            bool isNew = saved is null;
             if (saved is null)
             {
-                saved = new SessionProfile { UserId = launch.UserId, Name = launch.Username };
+                saved = new SessionProfile { UserId = userId, Name = username };
                 if (target.PlaceId > 0 && target.JobId is null && target.LinkCode is null && target.AccessCode is null)
                     saved.PlaceId = target.PlaceId;
                 profiles.Add(saved);
             }
-            saved.Username = launch.Username;
-            if (saved.LaunchProfileKey != launch.ProfileKey)
-            {
-                saved.LaunchProfileKey = launch.ProfileKey;
-            }
+            string previousUsername = saved.Username;
+            string? previousKey = saved.LaunchProfileKey;
+            saved.Username = username;
+            saved.LaunchProfileKey = profileKey;
             if (App.Settings.HasUnsavedChanges)
             {
                 App.Settings.Save();
                 if (!App.Settings.LastSaveSucceeded)
+                {
+                    if (isNew)
+                        profiles.Remove(saved);
+                    else
+                    {
+                        saved.Username = previousUsername;
+                        saved.LaunchProfileKey = previousKey;
+                    }
                     throw new IOException("The account could not be saved. Reopen Finstrap and try again.");
+                }
+                RefreshAccounts();
+                if (!SmokeMode)
+                    _ = LoadAvatarsAsync();
             }
-            return launch;
         }
     }
 }

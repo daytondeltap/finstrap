@@ -9,13 +9,13 @@
         /// <param name="url"></param>
         /// <exception cref="HttpRequestException"></exception>
         /// <exception cref="JsonException"></exception>
-        public static async Task<T> GetJson<T>(string url)
+        public static async Task<T> GetJson<T>(string url, CancellationToken token = default)
         {
-            var request = await App.HttpClient.GetAsync(url);
+            using var request = await App.HttpClient.GetAsync(url, token);
 
             request.EnsureSuccessStatusCode();
 
-            string json = await request.Content.ReadAsStringAsync();
+            string json = await request.Content.ReadAsStringAsync(token);
             
             return JsonSerializer.Deserialize<T>(json)!;
         }

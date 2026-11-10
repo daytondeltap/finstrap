@@ -35,14 +35,21 @@ namespace Bloxstrap.Integrations
 
         public async Task<string> GetTicketAsync(CancellationToken token)
         {
-            using var response = await PostAsync("https://auth.roblox.com/v1/authentication-ticket/", null, token);
+            // Roblox's web launcher sends the signed client assertion as the ticket request body.
+            byte[] payload = "{}"u8.ToArray();
+            using (var assertion = await _client.GetAsync("https://auth.roblox.com/v1/client-assertion/", token))
+            {
+                if (assertion.IsSuccessStatusCode)
+                    payload = await assertion.Content.ReadAsByteArrayAsync(token);
+            }
+            using var response = await PostAsync("https://auth.roblox.com/v1/authentication-ticket/", payload, token);
             response.EnsureSuccessStatusCode();
             if (!response.Headers.TryGetValues("rbx-authentication-ticket", out var tickets))
                 throw new InvalidDataException("Roblox did not return a desktop launch ticket.");
             return tickets.Single();
         }
 
-        private async Task<HttpResponseMessage> PostAsync(string url, byte[]? payload, CancellationToken token)
+        private async Task<HttpResponseMessage> PostAsync(string url, byte[] payload, CancellationToken token)
         {
             for (int attempt = 0; ; attempt++)
             {
@@ -51,13 +58,8 @@ namespace Bloxstrap.Integrations
                 request.Headers.Referrer = new Uri("https://www.roblox.com/");
                 if (_csrf is not null)
                     request.Headers.Add("X-CSRF-TOKEN", _csrf);
-                if (payload is null)
-                    request.Headers.Add("RBXAuthenticationNegotiation", "1");
-                else
-                {
-                    request.Content = new ByteArrayContent(payload);
-                    request.Content.Headers.ContentType = new("application/json");
-                }
+                request.Content = new ByteArrayContent(payload);
+                request.Content.Headers.ContentType = new("application/json");
                 var response = await _client.SendAsync(request, token);
                 if (attempt == 0 && response.StatusCode == HttpStatusCode.Forbidden &&
                     response.Headers.TryGetValues("x-csrf-token", out var values))

@@ -21,6 +21,8 @@
 
             string directory = useTempDir ? Path.Combine(Paths.TempLogs) : Path.Combine(Paths.Base, "Logs");
             string timestamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'");
+            if (App.LaunchSettings.UpgradeFlag.Active || App.LaunchSettings.WatcherFlag.Active)
+                timestamp += $"_{Environment.ProcessId}";
             string filename = $"{App.ProjectName}_{timestamp}.log";
             string location = Path.Combine(directory, filename);
 

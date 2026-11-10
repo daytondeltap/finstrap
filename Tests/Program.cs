@@ -84,15 +84,21 @@ try
     Check(await session.GetIdentityAsync(default) == (123L, "Example"), "account identity is verified");
     var challenge = new HttpResponseMessage(HttpStatusCode.Forbidden);
     challenge.Headers.Add("x-csrf-token", "csrf-test");
+    const string assertion = "{\"clientAssertion\":\"signed-assertion\"}";
+    handler.Responses.Enqueue(Json(assertion));
     handler.Responses.Enqueue(challenge);
     var ticket = new HttpResponseMessage(HttpStatusCode.OK);
     ticket.Headers.Add("rbx-authentication-ticket", "test-ticket-1234567890");
     handler.Responses.Enqueue(ticket);
     Check(await session.GetTicketAsync(default) == "test-ticket-1234567890", "CSRF challenge is retried and ticket extracted");
-    Check(handler.Requests[^1].Csrf == "csrf-test" && handler.Requests[^1].Negotiation == "1" && handler.Requests[^1].Origin == "https://www.roblox.com", "ticket retry includes required authentication headers");
+    Check(handler.Requests[^3].Path == "/v1/client-assertion/" && handler.Requests[^2].Body == assertion &&
+        handler.Requests[^1].Body == assertion && handler.Requests[^1].Csrf == "csrf-test" &&
+        handler.Requests[^1].Origin == "https://www.roblox.com", "ticket request and CSRF retry include Roblox's signed client assertion");
+    handler.Responses.Enqueue(new(HttpStatusCode.NotFound));
     handler.Responses.Enqueue(new(HttpStatusCode.Forbidden));
     try { await session.GetTicketAsync(default); throw new Exception("Expected rejection"); }
     catch (HttpRequestException) { Check(true, "rejected ticket does not launch an account"); }
+    handler.Responses.Enqueue(new(HttpStatusCode.NotFound));
     handler.Responses.Enqueue(new(HttpStatusCode.OK));
     try { await session.GetTicketAsync(default); throw new Exception("Expected missing ticket"); }
     catch (InvalidDataException) { Check(true, "missing launch ticket is rejected"); }
@@ -101,6 +107,7 @@ try
     Check(target.PlaceId == 456 && target.LinkCode == "private-code", "private-server share resolves for the account");
     Check(handler.Requests[^1].Body!.Contains("share-code"), "share request sends the intended invite");
     int beforeRetry = handler.Requests.Count;
+    handler.Responses.Enqueue(new(HttpStatusCode.NotFound));
     for (int i = 0; i < 2; i++)
     {
         var denied = new HttpResponseMessage(HttpStatusCode.Forbidden);
@@ -108,12 +115,13 @@ try
         handler.Responses.Enqueue(denied);
     }
     try { await session.GetTicketAsync(default); throw new Exception("Expected rejection"); }
-    catch (HttpRequestException) { Check(handler.Requests.Count == beforeRetry + 2, "CSRF retries stop after one retry"); }
+    catch (HttpRequestException) { Check(handler.Requests.Count == beforeRetry + 3, "CSRF retries stop after one retry"); }
     handler.Responses.Enqueue(Json("{\"id\":0,\"name\":\"\"}"));
     try { await session.GetIdentityAsync(default); throw new Exception("Expected invalid identity"); }
     catch (InvalidDataException) { Check(true, "invalid identity cannot link an account"); }
-    var home = new RobloxAccountLaunch(123, "Example", "profile", "test-ticket-1234567890", new());
+    var home = new RobloxAccountLaunch(123, "Example", "profile", "ticket:signature+/=", new());
     Check(home.OpenDesktopHome && home.Arguments.Contains("launchmode:app"), "home launches retain desktop mode");
+    Check(home.Arguments.Contains("+gameinfo:ticket%3Asignature%2B%2F%3D+"), "opaque desktop tickets cannot split the launch protocol");
     var game = new RobloxAccountLaunch(123, "Example", "profile", "test-ticket-1234567890", target);
     Check(!game.OpenDesktopHome && Uri.UnescapeDataString(game.Arguments).Contains("RequestPrivateGame"), "private game launch includes resolved destination");
     Check(AccountLaunchTarget.Parse("https://www.roblox.com/games/456/Test")?.PlaceId == 456, "game links parse");
@@ -152,11 +160,11 @@ public class BlockedSettings : JsonManager<TestSettings>
 public class FakeHandler : HttpMessageHandler
 {
     public Queue<HttpResponseMessage> Responses = new();
-    public List<(string? Csrf, string? Negotiation, string? Origin, string? Body)> Requests = new();
+    public List<(string? Csrf, string Path, string? Origin, string? Body)> Requests = new();
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
     {
         string? Header(string name) => request.Headers.TryGetValues(name, out var values) ? values.Single() : null;
-        Requests.Add((Header("X-CSRF-TOKEN"), Header("RBXAuthenticationNegotiation"), Header("Origin"),
+        Requests.Add((Header("X-CSRF-TOKEN"), request.RequestUri!.AbsolutePath, Header("Origin"),
             request.Content is null ? null : await request.Content.ReadAsStringAsync(token)));
         return Responses.Dequeue();
     }

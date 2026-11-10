@@ -114,16 +114,16 @@ namespace Bloxstrap.UI.Elements.Dialogs
             var bitmap=new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption=BitmapCacheOption.OnLoad;
             bitmap.UriSource=new Uri(path); bitmap.EndInit(); bitmap.Freeze(); return bitmap;
         }
-        private void LinkAccount(SessionProfile? profile)
+        private bool LinkAccount(SessionProfile? profile)
         {
-            if(_launchingAccounts) return;
-            var dialog=new AccountSignInDialog(profile,new AccountLaunchTarget(),linkOnly:true){Owner=this};
-            if(dialog.ShowDialog()!=true || dialog.LinkedAccount is not {} identity) return;
-            var saved=App.Settings.Prop.SessionProfiles.FirstOrDefault(p=>p.UserId==identity.Id);
-            if(saved is null) { saved=new(){UserId=identity.Id,Name=identity.Username}; App.Settings.Prop.SessionProfiles.Add(saved); }
-            saved.Username=identity.Username; saved.LaunchProfileKey=identity.Key;
-            App.Settings.Save(); AccountStatus.Text=App.Settings.LastSaveSucceeded ? "Account linked." : "Account could not be saved. Reopen Finstrap before retrying.";
-            RefreshAccounts(); _=LoadAvatarsAsync();
+            if(_launchingAccounts) return false;
+            var target = new AccountLaunchTarget();
+            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target), linkOnly: true) { Owner = this };
+            if (dialog.ShowDialog() != true)
+                return false;
+
+            AccountStatus.Text = "Account linked.";
+            return true;
         }
         private AccountCard? Card(object sender)=>(sender as FrameworkElement)?.DataContext as AccountCard;
         private async void LaunchCard_Click(object sender,RoutedEventArgs e)

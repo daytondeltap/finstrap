@@ -61,7 +61,10 @@
        </ListBox>
       </DockPanel>
       <StackPanel x:Name="LaunchActions" Grid.Column="1">
-       <ui:Button Content="Add account" Click="AddAccount_Click" Margin="0,0,0,16"/>
+       <WrapPanel Margin="0,0,0,16">
+        <ui:Button Content="Add account" Click="AddAccount_Click" Margin="0,0,8,0"/>
+        <ui:Button Content="Add and launch" Click="AddAndLaunch_Click"/>
+       </WrapPanel>
        <TextBlock Text="Launch groups" FontSize="18" FontWeight="SemiBold"/>
        <ComboBox x:Name="Groups" SelectionChanged="GroupChanged" Margin="0,8"/>
        <ui:TextBox x:Name="GroupName" PlaceholderText="Group name" Margin="0,0,0,8"/>

@@ -200,13 +200,15 @@ namespace Bloxstrap
                 HandleConnectionError(connectionResult);
             
 #if (!DEBUG || DEBUG_UPDATER) && !QA_BUILD
-            if (AccountLaunches is null && App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
+            if (AccountLaunches is null && await AutoUpdater.TryUpdateAsync(_launchMode, () =>
             {
-                bool updatePresent = await CheckForUpdates();
-                
-                if (updatePresent)
-                    return;
-            }
+                if (Dialog is not null)
+                    Dialog.CancelEnabled = false;
+                SetStatus(Strings.Bootstrapper_Status_UpgradingBloxstrap);
+            }))
+                return;
+            if (Dialog is not null)
+                Dialog.CancelEnabled = true;
 #endif
 
             App.AssertWindowsOSVersion();
@@ -864,121 +866,6 @@ namespace Bloxstrap
 #endregion
 
         #region App Install
-        private async Task<bool> CheckForUpdates()
-        {
-            const string LOG_IDENT = "Bootstrapper::CheckForUpdates";
-            
-            // don't update if there's another instance running (likely running in the background)
-            // i don't like this, but there isn't much better way of doing it /shrug
-            if (Process.GetProcessesByName(App.ProjectName).Length > 1)
-            {
-                App.Logger.WriteLine(LOG_IDENT, $"More than one Bloxstrap instance running, aborting update check");
-                return false;
-            }
-
-            App.Logger.WriteLine(LOG_IDENT, "Checking for updates...");
-
-#if !DEBUG_UPDATER
-            var releaseInfo = await App.GetLatestRelease();
-
-            if (releaseInfo is null || !Version.TryParse(releaseInfo.TagName.TrimStart('v'), out var releaseVersion))
-                return false;
-
-            var asset = releaseInfo.Assets?.FirstOrDefault(item =>
-                string.Equals(item.Name, "Finstrap.exe", StringComparison.OrdinalIgnoreCase));
-            if (asset is null)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "The latest release has no Finstrap.exe asset.");
-                return false;
-            }
-
-            var versionComparison = Utilities.CompareVersions(App.Version, releaseInfo.TagName);
-
-            // check if we aren't using a deployed build, so we can update to one if a new version comes out
-            if (App.IsProductionBuild && versionComparison == VersionComparison.Equal || versionComparison == VersionComparison.GreaterThan)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "No updates found");
-                return false;
-            }
-
-            if (Dialog is not null)
-                Dialog.CancelEnabled = false;
-
-            string version = releaseInfo.TagName;
-#else
-            string version = App.Version;
-#endif
-
-            SetStatus(Strings.Bootstrapper_Status_UpgradingBloxstrap);
-
-            try
-            {
-#if DEBUG_UPDATER
-                string downloadLocation = Path.Combine(Paths.TempUpdates, $"{App.ProjectName}.exe");
-
-                Directory.CreateDirectory(Paths.TempUpdates);
-
-                File.Copy(Paths.Process, downloadLocation, true);
-#else
-                string updateDirectory = Path.Combine(Paths.TempUpdates, releaseVersion.ToString());
-                string downloadLocation = Path.Combine(updateDirectory, "Finstrap.exe");
-
-                Directory.CreateDirectory(updateDirectory);
-
-                App.Logger.WriteLine(LOG_IDENT, $"Downloading {releaseInfo.TagName}...");
-                
-                if (!File.Exists(downloadLocation))
-                {
-                    using var response = await App.HttpClient.GetAsync(asset.BrowserDownloadUrl);
-                    response.EnsureSuccessStatusCode();
-
-                    string partial = downloadLocation + ".part";
-                    await using (var fileStream = File.Create(partial))
-                        await response.Content.CopyToAsync(fileStream);
-                    File.Move(partial, downloadLocation, overwrite: true);
-                }
-#endif
-
-                App.Logger.WriteLine(LOG_IDENT, $"Starting {version}...");
-
-                ProcessStartInfo startInfo = new()
-                {
-                    FileName = downloadLocation,
-                };
-
-                startInfo.ArgumentList.Add("-upgrade");
-
-                foreach (string arg in App.LaunchSettings.Args)
-                    startInfo.ArgumentList.Add(arg);
-
-                if (_launchMode == LaunchMode.Player && !startInfo.ArgumentList.Contains("-player"))
-                    startInfo.ArgumentList.Add("-player");
-                else if (_launchMode == LaunchMode.Studio && !startInfo.ArgumentList.Contains("-studio"))
-                    startInfo.ArgumentList.Add("-studio");
-
-                App.Settings.Save();
-
-                new InterProcessLock("AutoUpdater");
-                
-                Process.Start(startInfo);
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "An exception occurred when running the auto-updater");
-                App.Logger.WriteException(LOG_IDENT, ex);
-
-                Frontend.ShowMessageBox(
-                    string.Format(Strings.Bootstrapper_AutoUpdateFailed, version),
-                    MessageBoxImage.Information
-                );
-
-                Utilities.ShellExecute(App.ProjectDownloadLink);
-            }
-
-            return false;
-        }
         #endregion
 
         #region Roblox Install

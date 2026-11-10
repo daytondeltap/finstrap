@@ -9,6 +9,8 @@ namespace Bloxstrap.UI.ViewModels.Settings
 {
     public class IntegrationsViewModel : NotifyPropertyChangedViewModel
     {
+        public Models.Persistable.Settings FinstrapSettings => App.Settings.Prop;
+
         public ICommand AddIntegrationCommand => new RelayCommand(AddIntegration);
 
         public ICommand DeleteIntegrationCommand => new RelayCommand(DeleteIntegration);

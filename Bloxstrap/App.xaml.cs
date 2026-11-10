@@ -163,13 +163,13 @@ namespace Bloxstrap
             return true;
         }
 
-        public static async Task<GithubRelease?> GetLatestRelease()
+        public static async Task<GithubRelease?> GetLatestRelease(CancellationToken token = default)
         {
             const string LOG_IDENT = "App::GetLatestRelease";
 
             try
             {
-                var releaseInfo = await Http.GetJson<GithubRelease>($"https://api.github.com/repos/{ProjectRepository}/releases/latest");
+                var releaseInfo = await Http.GetJson<GithubRelease>($"https://api.github.com/repos/{ProjectRepository}/releases/latest", token);
 
                 if (releaseInfo is null || releaseInfo.Assets is null)
                 {
@@ -255,7 +255,7 @@ namespace Bloxstrap
             }
         }
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
 
@@ -417,6 +417,15 @@ namespace Bloxstrap
                 if (!LaunchSettings.BypassUpdateCheck)
                     Installer.HandleUpgrade();
 
+#if !DEBUG && !QA_BUILD
+                if (!LaunchSettings.BypassUpdateCheck && !LaunchSettings.BackgroundUpdaterFlag.Active &&
+                    (LaunchSettings.MenuFlag.Active || (!LaunchSettings.QuietFlag.Active && LaunchSettings.RobloxLaunchMode == LaunchMode.None)) &&
+                    await AutoUpdater.TryUpdateAsync(LaunchMode.None))
+                {
+                    SoftTerminate();
+                    return;
+                }
+#endif
                 LaunchHandler.ProcessLaunchArgs();
             }
 
