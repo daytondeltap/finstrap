@@ -33,7 +33,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             Queue.Changed += (id,state) => { foreach(var c in Cards.Where(c=>c.Profile.UserId==id)) c.Detail=state.ToString(); };
             DashboardTimer.Tick += async (_,_) => { if(IsVisible) await RefreshSessionsAsync(); };
             Closed += (_,_) => { DashboardTimer.Stop(); DashboardClosed.Cancel(); };
-            Loaded += async (_,_) => { await RefreshSessionsAsync(); await LoadAvatarsAsync(); };
+            Loaded += async (_,_) => { await RefreshSessionsAsync(); if(!SmokeMode) await LoadAvatarsAsync(); };
             DashboardTimer.Start();
         }
         private IEnumerable<AccountCard> Cards => AccountsList.Items.Cast<AccountCard>();

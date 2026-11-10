@@ -236,9 +236,35 @@ namespace Bloxstrap
             }
         }
 
+        private async void RunCommandCenterSmoke(string directory)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Directory.CreateDirectory(directory);
+            Paths.Initialize(Path.Combine(directory, "config"));
+            LaunchSettings = new LaunchSettings(Array.Empty<string>());
+            Locale.Initialize();
+            try
+            {
+                await UI.Elements.Dialogs.LaunchMenuDialog.RunSmokeAsync(directory);
+                Shutdown(0);
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText(Path.Combine(directory, "result.txt"), ex.ToString());
+                Shutdown(1);
+            }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
+
+            if (e.Args.Length == 2 && e.Args[0] == "--command-center-smoke")
+            {
+                RunCommandCenterSmoke(e.Args[1]);
+                return;
+            }
+
 
             Locale.Initialize();
 
