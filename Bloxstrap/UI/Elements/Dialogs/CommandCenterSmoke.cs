@@ -41,7 +41,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 window.Queue.Finish();
                 Check(window.Queue.States[123] == AccountLaunchState.Ready && window.Queue.States[456] == AccountLaunchState.Cancelled, "Queue cancellation failed.");
                 window.UpdateLayout();
-                Check(window.Background is SolidColorBrush background && background.Color.A == 255, "Dashboard background must be opaque for readable labels.");
+                Check(window.DashboardSurface.Background is SolidColorBrush background && background.Color.A == 255, "Dashboard background must be opaque for readable labels.");
                 var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
                 bitmap.Render(window);
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
