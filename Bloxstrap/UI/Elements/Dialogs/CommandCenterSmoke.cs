@@ -13,6 +13,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             SmokeMode = true;
             var first = new SessionProfile { UserId = 123, Username = "SmokeOne", Name = "First account" };
             var second = new SessionProfile { UserId = 456, Username = "SmokeTwo", Name = "Second account" };
+            App.Settings.Prop.Theme = Enums.Theme.Dark;
             App.Settings.Prop.MultiInstance = true;
             App.Settings.Prop.SessionProfiles.Add(first);
             App.Settings.Prop.SessionProfiles.Add(second);
@@ -40,18 +41,48 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 window.CancelRemaining_Click(window, new RoutedEventArgs());
                 window.Queue.Finish();
                 Check(window.Queue.States[123] == AccountLaunchState.Ready && window.Queue.States[456] == AccountLaunchState.Cancelled, "Queue cancellation failed.");
-                window.UpdateLayout();
-                Check(window.DashboardSurface.Background is SolidColorBrush background && background.Color.A == 255, "Dashboard background must be opaque for readable labels.");
-                var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-                bitmap.Render(window);
-                byte[] pixel = new byte[4];
-                bitmap.CopyPixels(new Int32Rect(50, 90, 1, 1), pixel, 4, 0);
-                Check(pixel[3] == 255, "Rendered dashboard surface must be opaque.");
-                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                using (var output = File.Create(Path.Combine(directory, "dashboard.png"))) encoder.Save(output);
-                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: dashboard opened, cards bound, group saved, accounts reordered, queue cancelled, screenshot rendered.");
+
+                foreach (var theme in new[] { Enums.Theme.Dark, Enums.Theme.Light })
+                {
+                    App.Settings.Prop.Theme = theme;
+                    window.ApplyTheme();
+                    await window.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    window.UpdateLayout();
+
+                    var expected = (Color)window.FindResource("ApplicationBackgroundColor");
+                    Check(window.DashboardSurface.Background is SolidColorBrush background && background.Color == expected && expected.A == 255,
+                        $"{theme}: dashboard surface must use the opaque Bloxstrap background.");
+                    foreach (var foreground in new[] { window.RootTitleBar.Foreground, window.AccountHint.Foreground, window.AccountDestination.Foreground, window.LaunchAll.Foreground })
+                    {
+                        Check(foreground is SolidColorBrush text && (theme == Enums.Theme.Dark ? text.Color.R > 192 : text.Color.R < 64),
+                            $"{theme}: dashboard labels and controls must use contrasting text.");
+                    }
+
+                    var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                    bitmap.Render(window);
+                    byte[] pixel = new byte[4];
+                    foreach (var point in new[]
+                    {
+                        window.RootTitleBar.TranslatePoint(new Point(200, 12), window),
+                        window.DashboardSurface.TranslatePoint(new Point(16, 12), window)
+                    })
+                    {
+                        bitmap.CopyPixels(new Int32Rect((int)point.X, (int)point.Y, 1, 1), pixel, 4, 0);
+                        Check(pixel.SequenceEqual(new[] { expected.B, expected.G, expected.R, expected.A }), $"{theme}: rendered title bar and dashboard backgrounds must match the selected theme.");
+                    }
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using var output = File.Create(Path.Combine(directory, theme == Enums.Theme.Dark ? "dashboard.png" : "dashboard-light.png"));
+                    encoder.Save(output);
+                }
+
+                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: dashboard opened, cards bound, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
             }
-            finally { window.Close(); }
+            finally
+            {
+                App.Settings.Prop.Theme = Enums.Theme.Dark;
+                window.Close();
+            }
         }
     }
 }

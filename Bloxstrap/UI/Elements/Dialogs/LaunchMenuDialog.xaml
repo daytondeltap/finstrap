@@ -4,67 +4,79 @@
  xmlns:base="clr-namespace:Bloxstrap.UI.Elements.Base"
  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
  Title="Finstrap · Accounts" Width="1020" Height="760" MinWidth="850" MinHeight="600"
- Background="#F4F6FA" Foreground="#172033" WindowStartupLocation="CenterScreen">
- <ScrollViewer VerticalScrollBarVisibility="Auto"><Border x:Name="DashboardSurface" Background="#F4F6FA" TextElement.Foreground="#172033" Padding="24"><DockPanel>
-  <StackPanel DockPanel.Dock="Top">
-   <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
-   <TextBlock Text="Launch together. Keep track of every session." Margin="0,4,0,16"/>
-   <WrapPanel>
-    <Button Content="Settings" Command="{Binding LaunchSettingsCommand}" Margin="0,0,8,8"/>
-    <Button Content="Roblox Studio" Command="{Binding LaunchRobloxStudioCommand}" Margin="0,0,8,8"/>
-    <Button Content="Launch Roblox" Click="LaunchDefault_Click" Margin="0,0,8,8"/>
-    <Button Content="Export diagnostics" Click="ExportDiagnostics_Click" Margin="0,0,8,8"/>
-   </WrapPanel>
-  </StackPanel>
-  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-   <TextBlock x:Name="AccountStatus" TextWrapping="Wrap"/>
-   <WrapPanel Margin="0,8,0,0">
-    <Button Content="Cancel remaining" Click="CancelRemaining_Click" Margin="0,0,8,0"/>
-    <Button Content="Retry failed" Click="RetryFailed_Click" Margin="0,0,8,0"/>
-    <Button Content="Tile windows" Click="Tile_Click" Margin="0,0,8,0"/>
-    <Button Content="Save layout" Click="SaveLayout_Click" Margin="0,0,8,0"/>
-    <Button Content="Restore layout" Click="RestoreLayout_Click"/>
-   </WrapPanel>
-  </StackPanel>
-  <Grid>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
-   <DockPanel Margin="0,0,20,0">
-    <TextBlock x:Name="AccountHint" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"/>
-    <ListBox x:Name="AccountsList" SelectionChanged="AccountsSelectionChanged" AutomationProperties.Name="Accounts">
-     <ListBox.ItemTemplate><DataTemplate>
-      <Border Padding="10" Margin="0,2" MinWidth="460">
-       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Image Source="{Binding Avatar}" Width="44" Height="44"/>
-        <StackPanel Grid.Column="1">
-         <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/>
-         <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,4"/>
-         <WrapPanel>
-          <Button Content="Launch" Click="LaunchCard_Click" Margin="0,0,6,0"/>
-          <Button Content="Focus" Click="FocusCard_Click" Margin="0,0,6,0"/>
-          <Button Content="Reconnect" Click="ReconnectCard_Click" Margin="0,0,6,0"/>
-          <Button Content="Close game" Click="CloseCard_Click" Margin="0,0,6,0"/>
-          <Button Content="Remove" Click="RemoveCard_Click"/>
-         </WrapPanel>
-        </StackPanel>
-       </Grid>
-      </Border>
-     </DataTemplate></ListBox.ItemTemplate>
-    </ListBox>
-   </DockPanel>
-   <StackPanel x:Name="LaunchActions" Grid.Column="1">
-    <Button Content="Add account" Click="AddAccount_Click" Margin="0,0,0,16"/>
-    <TextBlock Text="Launch groups" FontSize="18"/>
-    <ComboBox x:Name="Groups" SelectionChanged="GroupChanged" Margin="0,8"/>
-    <TextBox x:Name="GroupName" ToolTip="Group name" Margin="0,0,0,8"/>
-    <WrapPanel><Button Content="Save selected as group" Click="SaveGroup_Click"/><Button Content="Delete" Click="DeleteGroup_Click" Margin="4,0,0,0"/></WrapPanel>
-    <TextBlock Text="Select accounts in launch order. Use ↑ / ↓ to adjust the selected account." TextWrapping="Wrap" Margin="0,8"/>
-    <WrapPanel><Button Content="↑" Click="MoveUp_Click"/><Button Content="↓" Click="MoveDown_Click" Margin="8,0"/></WrapPanel>
-    <TextBlock Text="Destination" Margin="0,16,0,4"/>
-    <TextBox x:Name="AccountDestination" ToolTip="Place ID, server link, or friend"/>
-    <TextBlock Text="Blank uses each account’s saved place. 0 opens Roblox Home." TextWrapping="Wrap" Margin="0,4,0,12"/>
-    <Button x:Name="LaunchSelected" Content="Preview and launch selected" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
-    <Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
-   </StackPanel>
-  </Grid>
- </DockPanel></Border></ScrollViewer>
+ Background="{ui:ThemeResource ApplicationBackgroundBrush}" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}"
+ ExtendsContentIntoTitleBar="True" WindowStartupLocation="CenterScreen">
+ <DockPanel>
+  <ui:TitleBar x:Name="RootTitleBar" DockPanel.Dock="Top" Padding="8" Title="Finstrap · Accounts"
+               Background="{ui:ThemeResource ApplicationBackgroundBrush}"
+               Icon="pack://application:,,,/Bloxstrap.ico" ForceShutdown="False" MinimizeToTray="False" UseSnapLayout="True"/>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+   <Border x:Name="DashboardSurface" Background="{ui:ThemeResource ApplicationBackgroundBrush}" Padding="24">
+    <DockPanel>
+     <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock Text="Launch together. Keep track of every session." Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,16"/>
+      <WrapPanel>
+       <ui:Button Content="Settings" Command="{Binding LaunchSettingsCommand}" Margin="0,0,8,8"/>
+       <ui:Button Content="Roblox Studio" Command="{Binding LaunchRobloxStudioCommand}" Margin="0,0,8,8"/>
+       <ui:Button Content="Launch Roblox" Click="LaunchDefault_Click" Margin="0,0,8,8"/>
+       <ui:Button Content="Export diagnostics" Click="ExportDiagnostics_Click" Margin="0,0,8,8"/>
+      </WrapPanel>
+     </StackPanel>
+     <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+      <TextBlock x:Name="AccountStatus" TextWrapping="Wrap"/>
+      <WrapPanel Margin="0,8,0,0">
+       <ui:Button Content="Cancel remaining" Click="CancelRemaining_Click" Margin="0,0,8,0"/>
+       <ui:Button Content="Retry failed" Click="RetryFailed_Click" Margin="0,0,8,0"/>
+       <ui:Button Content="Tile windows" Click="Tile_Click" Margin="0,0,8,0"/>
+       <ui:Button Content="Save layout" Click="SaveLayout_Click" Margin="0,0,8,0"/>
+       <ui:Button Content="Restore layout" Click="RestoreLayout_Click"/>
+      </WrapPanel>
+     </StackPanel>
+     <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
+      <DockPanel Margin="0,0,20,0">
+       <TextBlock x:Name="AccountHint" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"/>
+       <ListBox x:Name="AccountsList" SelectionChanged="AccountsSelectionChanged" AutomationProperties.Name="Accounts">
+        <ListBox.ItemTemplate><DataTemplate>
+         <Border Padding="12" Margin="0,2" CornerRadius="8"
+                 Background="{ui:ThemeResource CardBackgroundFillColorDefaultBrush}"
+                 BorderBrush="{ui:ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+           <Image Source="{Binding Avatar}" Width="44" Height="44"/>
+           <StackPanel Grid.Column="1">
+            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/>
+            <TextBlock Text="{Binding Detail}" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,4"/>
+            <WrapPanel>
+             <ui:Button Content="Launch" Click="LaunchCard_Click" Margin="0,0,6,0"/>
+             <ui:Button Content="Focus" Click="FocusCard_Click" Margin="0,0,6,0"/>
+             <ui:Button Content="Reconnect" Click="ReconnectCard_Click" Margin="0,0,6,0"/>
+             <ui:Button Content="Close game" Click="CloseCard_Click" Margin="0,0,6,0"/>
+             <ui:Button Content="Remove" Click="RemoveCard_Click"/>
+            </WrapPanel>
+           </StackPanel>
+          </Grid>
+         </Border>
+        </DataTemplate></ListBox.ItemTemplate>
+       </ListBox>
+      </DockPanel>
+      <StackPanel x:Name="LaunchActions" Grid.Column="1">
+       <ui:Button Content="Add account" Click="AddAccount_Click" Margin="0,0,0,16"/>
+       <TextBlock Text="Launch groups" FontSize="18" FontWeight="SemiBold"/>
+       <ComboBox x:Name="Groups" SelectionChanged="GroupChanged" Margin="0,8"/>
+       <ui:TextBox x:Name="GroupName" PlaceholderText="Group name" Margin="0,0,0,8"/>
+       <WrapPanel><ui:Button Content="Save selected as group" Click="SaveGroup_Click"/><ui:Button Content="Delete" Click="DeleteGroup_Click" Margin="4,0,0,0"/></WrapPanel>
+       <TextBlock Text="Select accounts in launch order. Use ↑ / ↓ to adjust the selected account." TextWrapping="Wrap" Margin="0,8"/>
+       <WrapPanel><ui:Button Content="↑" Click="MoveUp_Click"/><ui:Button Content="↓" Click="MoveDown_Click" Margin="8,0"/></WrapPanel>
+       <TextBlock Text="Destination" Margin="0,16,0,4"/>
+       <ui:TextBox x:Name="AccountDestination" PlaceholderText="Place ID, server link, or friend"/>
+       <TextBlock Text="Blank uses each account’s saved place. 0 opens Roblox Home." TextWrapping="Wrap" Margin="0,4,0,12"/>
+       <ui:Button x:Name="LaunchSelected" Appearance="Primary" Content="Preview and launch selected" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
+       <ui:Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
+      </StackPanel>
+     </Grid>
+    </DockPanel>
+   </Border>
+  </ScrollViewer>
+ </DockPanel>
 </base:WpfUiWindow>
