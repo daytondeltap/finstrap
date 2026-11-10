@@ -11,6 +11,37 @@ Paths.Base = Path.Combine(Path.GetTempPath(), "finstrap-tests-" + Guid.NewGuid()
 Directory.CreateDirectory(Paths.Base);
 try
 {
+    var fit = WindowLayoutMath.Fit(.75,.9,.5,.5,-1920,0,1920,1080);
+    Check(fit.X == -960 && fit.Y == 540 && fit.Width == 960, "layouts clamp to monitor bounds including negative origins");
+    fit = WindowLayoutMath.Fit(double.NaN,double.PositiveInfinity,double.MaxValue,-1,0,0,800,600);
+    Check(fit.X == 0 && fit.Y == 0 && fit.Width == 800 && fit.Height == 240, "invalid layout fractions cannot position windows offscreen");
+    using (var stop = new CancellationTokenSource())
+    using (var self = Process.GetCurrentProcess())
+    {
+        var snapshot = new SessionSnapshot(self.Id,self.StartTime.ToUniversalTime().Ticks,123,true,456);
+        var server = SessionChannel.ServeAsync(self.Id, () => snapshot,stop.Token);
+        var received = await SessionChannel.ReadAsync(self.Id,default);
+        Check(received == snapshot,"watcher channel roundtrip preserves verified process and account identity");
+        snapshot = snapshot with { StartedUtc = 1 };
+        Check(await SessionChannel.ReadAsync(self.Id,default) is null,"watcher channel rejects recycled or mismatched process identity");
+        stop.Cancel();
+        try { await server; } catch(OperationCanceledException) { }
+    }
+    var queue = new AccountLaunchCoordinator();
+    queue.Begin(new long[] { 1, 2, 3 });
+    queue.Set(1, AccountLaunchState.Ready);
+    queue.Set(2, AccountLaunchState.Failed);
+    queue.CancelRemaining = true;
+    queue.Finish();
+    Check(queue.States[1] == AccountLaunchState.Ready && queue.States[2] == AccountLaunchState.Failed && queue.States[3] == AccountLaunchState.Cancelled, "cancellation preserves successful and failed accounts");
+    queue.Begin(new long[] { 2 });
+    Check(queue.States[1] == AccountLaunchState.Ready && queue.States[2] == AccountLaunchState.Queued && !queue.CancelRemaining, "retry queues failed account without restarting successful account");
+    queue.Finish();
+    Check(queue.States[2] == AccountLaunchState.Failed, "uncompleted launch is not reported ready");
+    var group = new Bloxstrap.Models.Persistable.LaunchGroup { Name = "Daily", Accounts = new() { 23, 12 }, Destination = "456" };
+    group.Layout[23] = new() { Monitor = "display", X = .5, Width = .5 };
+    var roundtrip = JsonSerializer.Deserialize<Bloxstrap.Models.Persistable.LaunchGroup>(JsonSerializer.Serialize(group))!;
+    Check(roundtrip.Id == group.Id && roundtrip.Version == 1 && roundtrip.Accounts.SequenceEqual(new long[] { 23, 12 }) && roundtrip.Layout[23].X == .5, "launch group order, identity and layout survive serialization");
     var settings = new JsonManager<TestSettings>();
     settings.Load();
     Check(!settings.HasUnsavedChanges, "new settings start clean");

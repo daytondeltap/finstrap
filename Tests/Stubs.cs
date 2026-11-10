@@ -1,4 +1,5 @@
 global using System.Text;
+global using System.Diagnostics;
 global using System.Text.Json;
 global using System.Text.RegularExpressions;
 global using System.Globalization;
@@ -11,6 +12,7 @@ namespace Bloxstrap
 {
     internal static class App
     {
+        public static string RobloxPlayerAppName => Process.GetCurrentProcess().ProcessName;
         public const string ProjectName = "Finstrap-Regression";
         public static readonly TestLogger Logger = new();
         public static readonly HttpClient HttpClient = new();

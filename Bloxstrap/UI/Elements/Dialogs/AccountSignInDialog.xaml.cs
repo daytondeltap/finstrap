@@ -19,10 +19,13 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private bool _autoCheck = true;
         private bool _signInStarted;
 
+        internal (long Id, string Username, string Key)? LinkedAccount { get; private set; }
+        private readonly bool _linkOnly;
         internal RobloxAccountLaunch? Result { get; private set; }
 
-        internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target)
+        internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target, bool linkOnly = false)
         {
+            _linkOnly = linkOnly;
             _profile = profile;
             _target = target;
             _profileKey = profile?.LaunchProfileKey is string key && Guid.TryParseExact(key, "N", out _)
@@ -35,7 +38,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 if (_autoCheck && _signInStarted)
                     await CheckAccountAsync();
             };
-            if (!_signInStarted)
+            if (!_signInStarted && !_linkOnly)
             {
                 Opacity = 0;
                 ShowActivated = false;
@@ -173,6 +176,12 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     return;
                 }
 
+                LinkedAccount = (userId, username, _profileKey);
+                if (_linkOnly)
+                {
+                    DialogResult = true;
+                    return;
+                }
                 var target = await session.ResolveShareAsync(_target, _closed.Token);
                 string ticket = await session.GetTicketAsync(_closed.Token);
                 Result = new RobloxAccountLaunch(userId, username, _profileKey, ticket, target);

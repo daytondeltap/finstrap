@@ -2,6 +2,19 @@
 
 Finstrap is a Windows fork of [Bloxstrap](https://github.com/bloxstraplabs/bloxstrap). It uses the original settings layout and adds Roblox session controls under **Integrations**.
 
+## Local account command center
+
+The launch menu includes account cards, verified session status, and named launch groups. No AI models or cloud backend are used.
+
+- Use **Add account** to sign in and link an account without starting Roblox. **Reconnect** verifies and refreshes its saved WebView profile. User IDs remain separate from editable profile names.
+- Select accounts, use the arrows to set launch order, enter a group name and optional destination, then save. Selecting a group restores its accounts and destination. Launching shows a confirmation preview.
+- Launches remain sequential. Each account shows its queue state; **Cancel remaining** leaves current and successful clients running. **Retry failed** excludes clients with verified active watchers. If tracking failed, inspect existing windows before confirming a retry.
+- Account cards distinguish a started client from an observed game join. Place IDs are shown when known. Unknown or untracked clients are explicitly labeled. Current-user-only named pipes supply watcher snapshots; the dashboard refreshes status and CPU/memory every five seconds while visible.
+- Use **Focus**, **Close game**, or **Tile windows** for verified sessions. Select a group and **Save layout** to remember monitor-relative positions. Group launches restore layouts after windows appear. Missing monitors and out-of-range positions fall back into the available desktop.
+- **Export diagnostics** saves an allowlisted summary of runtime, session counts, and queue states. It excludes account identities, configuration, logs, cookies, tickets, and server links.
+
+The first settings write preserves the existing file as `Settings.json.pre-command-center.bak`. Concurrent settings changes are rejected instead of overwriting another window's changes.
+
 ## Roblox sessions
 
 - **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility. If an update is required, Finstrap waits for existing clients to close before updating on the next launch.
@@ -22,13 +35,13 @@ Account launch uses the Microsoft WebView2 Runtime inside Finstrap. Existing bro
 
 ## Build on Windows
 
-Install the .NET 6 SDK and Desktop Runtime. From a checkout of the repository:
+Install the .NET 10 SDK and Desktop Runtime. From a checkout of the repository:
 
 ```powershell
 git submodule update --init --recursive
 dotnet publish Bloxstrap/Bloxstrap.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-The output is `Bloxstrap/bin/Release/net6.0-windows/win-x64/publish/Finstrap.exe`. Installing Finstrap registers it as the Roblox launcher for the current Windows user.
+The output is `Bloxstrap/bin/Release/net10.0-windows/win-x64/publish/Finstrap.exe`. Installing Finstrap registers it as the Roblox launcher for the current Windows user.
 
 Finstrap uses Bloxstrap's [WPF UI fork](https://github.com/bloxstraplabs/wpfui). See the [MIT license](LICENSE) for the original copyright and license terms.

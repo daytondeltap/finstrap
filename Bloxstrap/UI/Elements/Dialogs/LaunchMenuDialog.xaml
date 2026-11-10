@@ -1,117 +1,70 @@
-﻿<base:WpfUiWindow x:Class="Bloxstrap.UI.Elements.Dialogs.LaunchMenuDialog"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        xmlns:local="clr-namespace:Bloxstrap.UI.Elements.Dialogs"
-        xmlns:base="clr-namespace:Bloxstrap.UI.Elements.Base"
-        xmlns:models="clr-namespace:Bloxstrap.UI.ViewModels"
-        xmlns:resources="clr-namespace:Bloxstrap.Resources"
-        mc:Ignorable="d"
-        Title="Finstrap"
-        MinWidth="0"
-        MinHeight="0"
-        Width="580"
-        SizeToContent="Height"
-        ResizeMode="NoResize"
-        Background="{ui:ThemeResource ApplicationBackgroundBrush}"
-        ExtendsContentIntoTitleBar="True"
-        WindowStartupLocation="CenterScreen">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <ui:TitleBar Grid.Row="0" Grid.ColumnSpan="2" Padding="8" ShowMinimize="False" ShowMaximize="False" Title="Finstrap" Icon="pack://application:,,,/Bloxstrap.ico" CanMaximize="False" KeyboardNavigation.TabNavigation="None" />
-
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Grid Grid.Column="0" VerticalAlignment="Center">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                
-                <Grid Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,32">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <Image Grid.Column="0" Width="64" Height="64" Source="pack://application:,,,/Bloxstrap.ico" RenderOptions.BitmapScalingMode="HighQuality" />
-                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="Finstrap" FontSize="24" />
-                        <TextBlock Text="{Binding Version, Mode=OneTime}" VerticalAlignment="Bottom" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    </StackPanel>
-                </Grid>
-
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center">
-                    <ui:Hyperlink Icon="QuestionCircle48" Content="{x:Static resources:Strings.About_Title}" Command="{Binding LaunchAboutCommand, Mode=OneTime}" HorizontalAlignment="Center" />
-                    <ui:Hyperlink Icon="Book24" Content="{x:Static resources:Strings.LaunchMenu_BloxstrapWiki}" NavigateUri="https://bloxstraplabs.com/wiki/" HorizontalAlignment="Center" />
-                    <ui:Hyperlink Icon="PeopleCommunity28" Content="{x:Static resources:Strings.LaunchMenu_RobloxCommunity}" NavigateUri="https://www.roblox.com/communities/32380007/Bloxstrap" HorizontalAlignment="Center" />
-                </StackPanel>
-            </Grid>
-
-            <StackPanel x:Name="LaunchActions" Grid.Column="1" Margin="16">
-                <ui:CardAction Icon="ArrowRight12" TabIndex="0" Command="{Binding LaunchRobloxCommand, Mode=OneTime}">
-                    <StackPanel>
-                        <TextBlock FontSize="14" Text="{x:Static resources:Strings.LaunchMenu_LaunchRoblox}" />
-                    </StackPanel>
-                </ui:CardAction>
-
-                <ui:CardAction Margin="0,8,0,0" Icon="Wrench24" Command="{Binding LaunchRobloxStudioCommand, Mode=OneTime}">
-                    <StackPanel>
-                        <TextBlock FontSize="14" Text="{x:Static resources:Strings.LaunchMenu_LaunchRobloxStudio}" />
-                    </StackPanel>
-                </ui:CardAction>
-
-                <ui:CardAction Margin="0,8,0,0" TabIndex="1" Icon="Settings28" Command="{Binding LaunchSettingsCommand, Mode=OneTime}">
-                    <StackPanel>
-                        <TextBlock FontSize="14" Text="{x:Static resources:Strings.LaunchMenu_ConfigureSettings}" />
-                    </StackPanel>
-                </ui:CardAction>
-
-                <TextBlock Text="Roblox accounts" FontSize="14" FontWeight="SemiBold" Margin="0,14,0,4" />
-                <TextBlock x:Name="AccountHint" TextWrapping="Wrap" Margin="0,0,0,6"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                <ListBox x:Name="AccountsList" MinHeight="38" MaxHeight="132"
-                         SelectionChanged="AccountsSelectionChanged" AutomationProperties.Name="Roblox accounts">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding Name}"
-                                      IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <TextBlock Text="Destination" Margin="0,8,0,2" />
-                <ui:TextBox x:Name="AccountDestination" PlaceholderText="Place ID, server link, or friend"
-                            AutomationProperties.Name="Roblox launch destination" />
-                <TextBlock Text="Blank uses saved place IDs. Enter 0 for Roblox Home."
-                           TextWrapping="Wrap" Margin="0,3,0,0"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                <WrapPanel Margin="0,8,0,0">
-                    <ui:Button Content="Add account and launch" Click="AddAccount_Click" Margin="0,0,4,4" />
-                    <ui:Button x:Name="LaunchSelected" Content="Launch selected" Click="LaunchSelected_Click" IsEnabled="False" Margin="0,0,4,4" />
-                    <ui:Button x:Name="LaunchAll" Content="Launch all" Click="LaunchAll_Click" IsEnabled="False" Margin="0,0,0,4" />
-                </WrapPanel>
-                <TextBlock x:Name="AccountStatus" TextWrapping="Wrap" Margin="0,2,0,0"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-
-                <Border Margin="9" />
-
-                <ui:CardAction Margin="0,8,0,0" TabIndex="2" Icon="BookQuestionMark24" Command="models:GlobalViewModel.OpenWebpageCommand" CommandParameter="https://bloxstraplabs.com/wiki/help/">
-                    <StackPanel>
-                        <TextBlock FontSize="14" Text="{x:Static resources:Strings.LaunchMenu_Wiki_Title}" />
-                        <TextBlock Margin="0,2,0,0" FontSize="12" Text="{x:Static resources:Strings.LaunchMenu_Wiki_Description}" Padding="0,0,16,0"  Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    </StackPanel>
-                </ui:CardAction>
-            </StackPanel>
-        </Grid>
-    </Grid>
+<base:WpfUiWindow x:Class="Bloxstrap.UI.Elements.Dialogs.LaunchMenuDialog"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:base="clr-namespace:Bloxstrap.UI.Elements.Base"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+ Title="Finstrap · Accounts" Width="1020" Height="760" MinWidth="850" MinHeight="600"
+ Background="{ui:ThemeResource ApplicationBackgroundBrush}" WindowStartupLocation="CenterScreen">
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><DockPanel Margin="24">
+  <StackPanel DockPanel.Dock="Top">
+   <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
+   <TextBlock Text="Launch together. Keep track of every session." Margin="0,4,0,16"/>
+   <WrapPanel>
+    <Button Content="Settings" Command="{Binding LaunchSettingsCommand}" Margin="0,0,8,8"/>
+    <Button Content="Roblox Studio" Command="{Binding LaunchRobloxStudioCommand}" Margin="0,0,8,8"/>
+    <Button Content="Launch Roblox" Click="LaunchDefault_Click" Margin="0,0,8,8"/>
+    <Button Content="Export diagnostics" Click="ExportDiagnostics_Click" Margin="0,0,8,8"/>
+   </WrapPanel>
+  </StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+   <TextBlock x:Name="AccountStatus" TextWrapping="Wrap"/>
+   <WrapPanel Margin="0,8,0,0">
+    <Button Content="Cancel remaining" Click="CancelRemaining_Click" Margin="0,0,8,0"/>
+    <Button Content="Retry failed" Click="RetryFailed_Click" Margin="0,0,8,0"/>
+    <Button Content="Tile windows" Click="Tile_Click" Margin="0,0,8,0"/>
+    <Button Content="Save layout" Click="SaveLayout_Click" Margin="0,0,8,0"/>
+    <Button Content="Restore layout" Click="RestoreLayout_Click"/>
+   </WrapPanel>
+  </StackPanel>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
+   <DockPanel Margin="0,0,20,0">
+    <TextBlock x:Name="AccountHint" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"/>
+    <ListBox x:Name="AccountsList" SelectionChanged="AccountsSelectionChanged" AutomationProperties.Name="Accounts">
+     <ListBox.ItemTemplate><DataTemplate>
+      <Border Padding="10" Margin="0,2" MinWidth="460">
+       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Image Source="{Binding Avatar}" Width="44" Height="44"/>
+        <StackPanel Grid.Column="1">
+         <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/>
+         <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,4"/>
+         <WrapPanel>
+          <Button Content="Launch" Click="LaunchCard_Click" Margin="0,0,6,0"/>
+          <Button Content="Focus" Click="FocusCard_Click" Margin="0,0,6,0"/>
+          <Button Content="Reconnect" Click="ReconnectCard_Click" Margin="0,0,6,0"/>
+          <Button Content="Close game" Click="CloseCard_Click" Margin="0,0,6,0"/>
+          <Button Content="Remove" Click="RemoveCard_Click"/>
+         </WrapPanel>
+        </StackPanel>
+       </Grid>
+      </Border>
+     </DataTemplate></ListBox.ItemTemplate>
+    </ListBox>
+   </DockPanel>
+   <StackPanel x:Name="LaunchActions" Grid.Column="1">
+    <Button Content="Add account" Click="AddAccount_Click" Margin="0,0,0,16"/>
+    <TextBlock Text="Launch groups" FontSize="18"/>
+    <ComboBox x:Name="Groups" SelectionChanged="GroupChanged" Margin="0,8"/>
+    <TextBox x:Name="GroupName" ToolTip="Group name" Margin="0,0,0,8"/>
+    <WrapPanel><Button Content="Save selected as group" Click="SaveGroup_Click"/><Button Content="Delete" Click="DeleteGroup_Click" Margin="4,0,0,0"/></WrapPanel>
+    <TextBlock Text="Select accounts in launch order. Use ↑ / ↓ to adjust the selected account." TextWrapping="Wrap" Margin="0,8"/>
+    <WrapPanel><Button Content="↑" Click="MoveUp_Click"/><Button Content="↓" Click="MoveDown_Click" Margin="8,0"/></WrapPanel>
+    <TextBlock Text="Destination" Margin="0,16,0,4"/>
+    <TextBox x:Name="AccountDestination" ToolTip="Place ID, server link, or friend"/>
+    <TextBlock Text="Blank uses each account’s saved place. 0 opens Roblox Home." TextWrapping="Wrap" Margin="0,4,0,12"/>
+    <Button x:Name="LaunchSelected" Content="Preview and launch selected" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
+    <Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
+   </StackPanel>
+  </Grid>
+ </DockPanel></ScrollViewer>
 </base:WpfUiWindow>

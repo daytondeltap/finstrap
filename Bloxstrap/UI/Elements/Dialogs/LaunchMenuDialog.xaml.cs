@@ -24,11 +24,14 @@ namespace Bloxstrap.UI.Elements.Dialogs
             DataContext = viewModel;
             InitializeComponent();
             RefreshAccounts();
+            InitializeDashboard();
         }
 
         protected override void OnClosing(CancelEventArgs e)
         {
             if (_launchingAccounts)
+                e.Cancel = true;
+            else if (App.Settings.HasUnsavedChanges && Frontend.ShowMessageBox("Some account or group changes have not been saved. Close anyway?", MessageBoxImage.Warning, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 e.Cancel = true;
             base.OnClosing(e);
         }
@@ -36,12 +39,10 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private void RefreshAccounts()
         {
             AccountsList.SelectionMode = App.Settings.Prop.MultiInstance ? SelectionMode.Multiple : SelectionMode.Single;
-            var accounts = App.Settings.Prop.SessionProfiles.Where(profile => profile.UserId > 0)
-                .DistinctBy(profile => profile.UserId).ToArray();
+            var accounts = App.Settings.Prop.SessionProfiles.Where(p => p.UserId > 0).DistinctBy(p => p.UserId)
+                .Select(p => new AccountCard(p)).ToArray();
             AccountsList.ItemsSource = accounts;
-            AccountHint.Text = accounts.Length == 0 ? "Add an account to launch Roblox directly from this menu."
-                : App.Settings.Prop.MultiInstance ? "Check the accounts you want to launch."
-                : "Select one account. Enable multi-instance launching in Integrations to select several.";
+            AccountHint.Text = accounts.Length == 0 ? "Add an account to get started." : "Select accounts to launch. Session status comes from verified Finstrap watchers.";
             LaunchSelected.IsEnabled = AccountsList.SelectedItems.Count > 0;
             LaunchAll.IsEnabled = App.Settings.Prop.MultiInstance && accounts.Length > 0;
         }
@@ -52,30 +53,29 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 LaunchSelected.IsEnabled = AccountsList.SelectedItems.Count > 0;
         }
 
-        private async void AddAccount_Click(object sender, RoutedEventArgs e) =>
-            await LaunchAccountsAsync(new SessionProfile?[] { null });
+        private void AddAccount_Click(object sender, RoutedEventArgs e) => LinkAccount(null);
 
         private async void LaunchSelected_Click(object sender, RoutedEventArgs e) =>
-            await ConfirmAndLaunchAsync(AccountsList.SelectedItems.Cast<SessionProfile>().ToArray());
+            await ConfirmAndLaunchAsync(Cards.Where(c => AccountsList.SelectedItems.Contains(c)).Select(c => c.Profile).ToArray());
 
         private async void LaunchAll_Click(object sender, RoutedEventArgs e)
         {
             if (App.Settings.Prop.MultiInstance)
-                await ConfirmAndLaunchAsync(AccountsList.Items.Cast<SessionProfile>().ToArray());
+                await ConfirmAndLaunchAsync(AccountsList.Items.Cast<AccountCard>().Select(c => c.Profile).ToArray());
         }
 
         private async Task ConfirmAndLaunchAsync(SessionProfile[] accounts)
         {
             if (accounts.Length == 0)
                 return;
-            if (accounts.Length > 1)
+            if (accounts.Length > 1 && !App.Settings.Prop.MultiInstance)
             {
-                if (!App.Settings.Prop.MultiInstance)
-                    return;
-                if (Frontend.ShowMessageBox($"Launch {accounts.Length} Roblox accounts?",
-                        MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
-                    return;
+                AccountStatus.Text = "Enable multi-instance launching in Settings → Integrations first.";
+                return;
             }
+            string preview = string.Join("\n", accounts.Select((p,i) => $"{i+1}. {p.Name} → {(string.IsNullOrWhiteSpace(AccountDestination.Text) ? p.PlaceId.ToString() : AccountDestination.Text)}"));
+            if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview, MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
+                return;
             await LaunchAccountsAsync(accounts);
         }
 
@@ -87,6 +87,10 @@ namespace Bloxstrap.UI.Elements.Dialogs
             LaunchActions.IsEnabled = false;
             try
             {
+                await RefreshSessionsAsync();
+                accounts = accounts.Where(p => p is null || !ActiveSessions.Any(s => s.UserId == p.UserId)).ToArray();
+                if (accounts.Count == 0) { AccountStatus.Text = "These accounts already have tracked sessions."; return; }
+                Queue.Begin(accounts.Where(p => p is not null).Select(p => p!.UserId));
                 AccountStatus.Text = "Preparing Roblox…";
                 var destination = AccountLaunchTarget.Parse(AccountDestination.Text);
                 if (destination is not null)
@@ -100,11 +104,32 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     {
                         AccountStatus.Text = profile is null ? "Opening Roblox sign-in…"
                             : $"Launching Roblox for {profile.Name}…";
-                        return SignIn(profile, target);
+                        if (Queue.CancelRemaining) return null;
+                        if (profile is not null) Queue.Set(profile.UserId, AccountLaunchState.SignInNeeded);
+                        while (!Queue.CancelRemaining)
+                        {
+                            try
+                            {
+                                var result = SignIn(profile, target);
+                                if (profile is not null) Queue.Set(profile.UserId, result is null ? AccountLaunchState.Cancelled : AccountLaunchState.Starting);
+                                return result;
+                            }
+                            catch (Exception ex) when (ex is IOException or InvalidOperationException)
+                            {
+                                var choice = Frontend.ShowMessageBox(ex.Message + "\nYes: retry. No: skip. Cancel: stop remaining launches.", MessageBoxImage.Warning, MessageBoxButton.YesNoCancel);
+                                if (choice == MessageBoxResult.Yes) continue;
+                                if (profile is not null) Queue.Set(profile.UserId, AccountLaunchState.Failed);
+                                if (choice == MessageBoxResult.Cancel) Queue.CancelRemaining = true;
+                                return null;
+                            }
+                        }
+                        return null;
                     }));
                 }
 
-                var bootstrapper = new Bloxstrap.Bootstrapper(LaunchMode.Player) { AccountLaunches = launches };
+                var bootstrapper = new Bloxstrap.Bootstrapper(LaunchMode.Player) { AccountLaunches = launches,
+                    StopAccountQueue = () => Queue.CancelRemaining,
+                    AccountLaunchCompleted = (id, ready) => Dispatcher.Invoke(() => Queue.Set(id, ready ? AccountLaunchState.Ready : AccountLaunchState.Failed)) };
                 await Task.Run(bootstrapper.Run);
                 int started = bootstrapper.AccountPlayersStarted;
                 AccountStatus.Text = started == accounts.Count
@@ -122,9 +147,11 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
             finally
             {
+                Queue.Finish();
                 _launchingAccounts = false;
                 LaunchActions.IsEnabled = true;
-                RefreshAccounts();
+                await RefreshSessionsAsync();
+                await RestoreSelectedLayoutAsync();
             }
         }
 
@@ -143,6 +170,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     saved.PlaceId = target.PlaceId;
                 profiles.Add(saved);
             }
+            saved.Username = launch.Username;
             if (saved.LaunchProfileKey != launch.ProfileKey)
             {
                 saved.LaunchProfileKey = launch.ProfileKey;

@@ -82,6 +82,8 @@ namespace Bloxstrap
         public bool QuitIfMutexExists { get; set; } = false;
         internal IReadOnlyList<Func<Task<RobloxAccountLaunch?>>>? AccountLaunches { get; init; }
         internal int AccountPlayersStarted { get; private set; }
+        internal Func<bool>? StopAccountQueue { get; init; }
+        internal Action<long, bool>? AccountLaunchCompleted { get; init; }
         private long _accountUserId;
         private bool _keepDesktopApp;
         #endregion
@@ -345,7 +347,7 @@ namespace Bloxstrap
 
                     foreach (var signIn in AccountLaunches)
                     {
-                        if (_cancelTokenSource.IsCancellationRequested)
+                        if (_cancelTokenSource.IsCancellationRequested || StopAccountQueue?.Invoke() == true)
                             break;
                         var account = await signIn();
                         if (account is null)
@@ -355,7 +357,9 @@ namespace Bloxstrap
                         _launchCommandLine = account.Arguments;
                         try
                         {
-                            if (!StartRoblox(keepLaunchLock: true))
+                            bool started = StartRoblox(keepLaunchLock: true);
+                            AccountLaunchCompleted?.Invoke(account.UserId, started);
+                            if (!started)
                                 break;
                         }
                         finally { _launchCommandLine = ""; }
@@ -779,7 +783,7 @@ namespace Bloxstrap
                 AccountPlayersStarted++;
 
             // allow for window to show, since the log is created pretty far beforehand
-            Thread.Sleep(1000);
+            // Watcher readiness already provides the handoff barrier.
             return true;
         }
 
