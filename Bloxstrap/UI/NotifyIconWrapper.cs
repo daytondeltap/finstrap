@@ -129,6 +129,12 @@ namespace Bloxstrap.UI
             });
         }
 
+        internal async Task FinishClipsAsync()
+        {
+            var finishing = await _menuContainer.Dispatcher.InvokeAsync(_menuContainer.FinishClipsAsync);
+            await finishing;
+        }
+
         public void Dispose()
         {
             if (_disposing)

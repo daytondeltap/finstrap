@@ -260,6 +260,12 @@ namespace Bloxstrap
         {
             const string LOG_IDENT = "App::OnStartup";
 
+            if (e.Args.Length == 2 && e.Args[0] == "--clip-smoke" && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            {
+                await Integrations.WindowReplaySmoke.RunAsync(e.Args[1]);
+                return;
+            }
+
             if (e.Args.Length == 2 && e.Args[0] == "--command-center-smoke")
             {
                 RunCommandCenterSmoke(e.Args[1]);

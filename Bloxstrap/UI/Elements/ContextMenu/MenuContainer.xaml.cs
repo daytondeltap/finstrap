@@ -29,6 +29,7 @@ namespace Bloxstrap.UI.Elements.ContextMenu
         public MenuContainer(Watcher watcher)
         {
             InitializeComponent();
+            ClipsItem.Visibility = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? Visibility.Visible : Visibility.Collapsed;
 
             _watcher = watcher;
 
@@ -101,7 +102,12 @@ namespace Bloxstrap.UI.Elements.ContextMenu
             PInvoke.SetWindowLong(hWnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE, exStyle);
         }
 
-        private void Window_Closed(object sender, EventArgs e) => App.Logger.WriteLine("MenuContainer::Window_Closed", "Context menu container closed");
+        private void Window_Closed(object sender, EventArgs e)
+        {
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+                ReleaseClipControls();
+            App.Logger.WriteLine("MenuContainer::Window_Closed", "Context menu container closed");
+        }
 
         private void RichPresenceMenuItem_Click(object sender, RoutedEventArgs e) => _watcher.RichPresence?.SetVisibility(((MenuItem)sender).IsChecked);
 

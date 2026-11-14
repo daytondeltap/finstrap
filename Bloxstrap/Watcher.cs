@@ -16,6 +16,15 @@ namespace Bloxstrap
         private bool _keepAwake;
         private string? _macroOverride;
 
+        public IntPtr GetSessionWindow()
+        {
+            if (!IsPlayerRunning())
+                return IntPtr.Zero;
+
+            using var process = Process.GetProcessById(ProcessId);
+            return process.MainWindowHandle;
+        }
+
         public int ProcessId => _watcherData?.ProcessId ?? 0;
         public SessionProfile? Profile
         {
@@ -166,6 +175,8 @@ namespace Bloxstrap
             Task antiIdle = App.Settings.Prop.ForegroundAntiIdle ? RunAntiIdleAsync() : Task.CompletedTask;
             await exited;
             _sessionEnded.Cancel();
+            try { await _notifyIcon.FinishClipsAsync(); }
+            catch (Exception ex) { App.Logger.WriteException("Watcher::FinishClips", ex); }
 
             // Wait for pending input to release its keys before terminating this watcher.
             Task? playback = await App.Current.Dispatcher.InvokeAsync(() => _playbackTask);
