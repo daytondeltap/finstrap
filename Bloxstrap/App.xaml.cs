@@ -61,6 +61,7 @@ namespace Bloxstrap
         public static readonly LazyJsonManager<DistributionState> StudioState = new(nameof(StudioState));
 
         public static readonly FastFlagManager FastFlags = new();
+        public static readonly FastFlagManager StudioFastFlags = new(studio: true);
 
         public static readonly HttpClient HttpClient = new(
             new HttpClientLoggingHandler(
@@ -402,6 +403,7 @@ namespace Bloxstrap
                 Settings.Load();
                 State.Load();
                 FastFlags.Load();
+                StudioFastFlags.Load();
 
                 if (!Locale.SupportedLocales.ContainsKey(Settings.Prop.Locale))
                 {

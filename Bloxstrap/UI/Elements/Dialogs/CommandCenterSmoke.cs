@@ -18,6 +18,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
         {
             SmokeMode = true;
             await VerifySessionSettingsAsync();
+            VerifyFastFlagEditor();
             var first = new SessionProfile { UserId = 123, Username = "SmokeOne", Name = "First account" };
             var second = new SessionProfile { UserId = 456, Username = "SmokeTwo", Name = "Second account" };
             App.Settings.Prop.Theme = Enums.Theme.Dark;
@@ -95,6 +96,23 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 App.Settings.Prop.Theme = Enums.Theme.Dark;
                 window.Close();
             }
+        }
+
+        private static void VerifyFastFlagEditor()
+        {
+            const string flag = "DFIntTextureQualityOverride";
+            var editor = new FastFlagEditorPage();
+            var preview = new FastFlagImportDialog(new[] { new FastFlagImportRow(flag, "2", "New") }, "Player");
+            preview.Close();
+            App.FastFlags.SetValue(flag, "2");
+            App.StudioFastFlags.SetValue(flag, "3");
+            App.FastFlags.Save();
+            App.StudioFastFlags.Save();
+            if (!App.FastFlags.Load() || !App.StudioFastFlags.Load() ||
+                App.FastFlags.GetValue(flag) != "2" || App.StudioFastFlags.GetValue(flag) != "3" ||
+                FastFlagManager.GetValidationError(flag, "bad value") is null ||
+                !FastFlagManager.PlayerAllowlist.Contains(flag))
+                throw new InvalidOperationException("Fast Flag target isolation or value validation failed.");
         }
 
         private static async Task VerifySessionSettingsAsync()

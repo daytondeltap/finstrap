@@ -101,6 +101,7 @@ namespace Bloxstrap
             App.Settings.Load(false);
             App.State.Load(false);
             App.FastFlags.Load(false);
+            App.StudioFastFlags.Load(false);
 
             App.Settings.Prop.EnableAnalytics = EnableAnalytics;
 

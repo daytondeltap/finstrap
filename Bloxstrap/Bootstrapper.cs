@@ -1333,6 +1333,44 @@ namespace Bloxstrap
                 Directory.Delete(modFontFamiliesFolder, true);
             }
 
+            const string flagPath = @"ClientSettings\ClientAppSettings.json";
+            var flagManager = IsStudioLaunch ? App.StudioFastFlags : App.FastFlags;
+            if (App.Settings.Prop.UseFastFlagManager && flagManager.IsSaved)
+            {
+                string destination = Path.Combine(_latestVersionDirectory, flagPath);
+                string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                modFolderFiles.Add(flagPath);
+                try
+                {
+                    using var document = JsonDocument.Parse(File.ReadAllText(flagManager.FileLocation));
+                    var flags = document.RootElement.EnumerateObject()
+                        .Where(flag => (IsStudioLaunch || FastFlagManager.PlayerAllowlist.Contains(flag.Name)) &&
+                            flag.Value.ValueKind is (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False) &&
+                            FastFlagManager.GetValidationError(flag.Name, flag.Value.ToString()) is null)
+                        .ToDictionary(flag => flag.Name, flag => flag.Value.ToString(), StringComparer.Ordinal);
+                    string json = JsonSerializer.Serialize(flags, new JsonSerializerOptions { WriteIndented = true });
+                    if (!File.Exists(destination) || File.ReadAllText(destination) != json)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                        File.WriteAllText(temporary, json);
+                        Filesystem.AssertReadOnly(destination);
+                        File.Move(temporary, destination, overwrite: true);
+                        Filesystem.AssertReadOnly(destination);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+                {
+                    App.Logger.WriteException(LOG_IDENT, ex);
+                    success = false;
+                }
+                finally
+                {
+                    try { File.Delete(temporary); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+
             foreach (string file in Directory.GetFiles(Paths.Modifications, "*.*", SearchOption.AllDirectories))
             {
                 if (_cancelTokenSource.IsCancellationRequested)
@@ -1348,7 +1386,7 @@ namespace Bloxstrap
                     continue;
                 }
 
-                if (!App.Settings.Prop.UseFastFlagManager && String.Equals(relativeFile, "ClientSettings\\ClientAppSettings.json", StringComparison.OrdinalIgnoreCase))
+                if (String.Equals(relativeFile, flagPath, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (relativeFile.EndsWith(".lock"))
