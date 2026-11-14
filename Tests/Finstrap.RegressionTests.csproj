@@ -1,11 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Bloxstrap/Integrations/WindowLayoutMath.cs" Link="WindowLayoutMath.cs" />
+    <Compile Include="../Bloxstrap/Integrations/SessionChannel.cs" Link="SessionChannel.cs" />
+    <Compile Include="../Bloxstrap/Integrations/AccountLaunchCoordinator.cs" Link="AccountLaunchCoordinator.cs" />
+    <Compile Include="../Bloxstrap/Models/Persistable/LaunchGroup.cs" Link="LaunchGroup.cs" />
     <Compile Include="../Bloxstrap/JsonManager.cs" Link="JsonManager.cs" />
     <Compile Include="../Bloxstrap/Utility/MD5Hash.cs" Link="MD5Hash.cs" />
     <Compile Include="../Bloxstrap/Integrations/AccountLaunchTarget.cs" Link="AccountLaunchTarget.cs" />

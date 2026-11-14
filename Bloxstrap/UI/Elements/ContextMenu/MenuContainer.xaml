@@ -73,6 +73,13 @@
                     </Grid>
                 </MenuItem.Header>
             </MenuItem>
+            <MenuItem x:Name="ClipsItem" Header="Game clips" SubmenuOpened="ClipsMenu_Opened">
+                <MenuItem x:Name="ClipStatusItem" IsEnabled="False" />
+                <MenuItem x:Name="ArmClipsItem" Header="Start clip buffer" Click="ArmClips_Click" />
+                <MenuItem x:Name="SaveClipItem" Header="Save clip" InputGestureText="Ctrl+Shift+F9" Click="SaveClip_Click" />
+                <MenuItem x:Name="StopClipsItem" Header="Stop and clear clip buffer" Click="StopClips_Click" />
+                <MenuItem Header="Open clips folder" Click="OpenClips_Click" />
+            </MenuItem>
             <MenuItem x:Name="SessionLabel" IsEnabled="False" />
             <MenuItem Header="Load TinyTask recording…" Click="LoadMacro_Click" />
             <MenuItem x:Name="PlayMacroItem" Header="Play assigned recording" Click="PlayMacro_Click" />

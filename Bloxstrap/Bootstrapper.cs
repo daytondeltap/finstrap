@@ -82,6 +82,8 @@ namespace Bloxstrap
         public bool QuitIfMutexExists { get; set; } = false;
         internal IReadOnlyList<Func<Task<RobloxAccountLaunch?>>>? AccountLaunches { get; init; }
         internal int AccountPlayersStarted { get; private set; }
+        internal Func<bool>? StopAccountQueue { get; init; }
+        internal Action<long, bool>? AccountLaunchCompleted { get; init; }
         private long _accountUserId;
         private bool _keepDesktopApp;
         #endregion
@@ -198,13 +200,15 @@ namespace Bloxstrap
                 HandleConnectionError(connectionResult);
             
 #if (!DEBUG || DEBUG_UPDATER) && !QA_BUILD
-            if (AccountLaunches is null && App.Settings.Prop.CheckForUpdates && !App.LaunchSettings.UpgradeFlag.Active)
+            if (AccountLaunches is null && await AutoUpdater.TryUpdateAsync(_launchMode, () =>
             {
-                bool updatePresent = await CheckForUpdates();
-                
-                if (updatePresent)
-                    return;
-            }
+                if (Dialog is not null)
+                    Dialog.CancelEnabled = false;
+                SetStatus(Strings.Bootstrapper_Status_UpgradingBloxstrap);
+            }))
+                return;
+            if (Dialog is not null)
+                Dialog.CancelEnabled = true;
 #endif
 
             App.AssertWindowsOSVersion();
@@ -345,7 +349,7 @@ namespace Bloxstrap
 
                     foreach (var signIn in AccountLaunches)
                     {
-                        if (_cancelTokenSource.IsCancellationRequested)
+                        if (_cancelTokenSource.IsCancellationRequested || StopAccountQueue?.Invoke() == true)
                             break;
                         var account = await signIn();
                         if (account is null)
@@ -355,7 +359,9 @@ namespace Bloxstrap
                         _launchCommandLine = account.Arguments;
                         try
                         {
-                            if (!StartRoblox(keepLaunchLock: true))
+                            bool started = StartRoblox(keepLaunchLock: true);
+                            AccountLaunchCompleted?.Invoke(account.UserId, started);
+                            if (!started)
                                 break;
                         }
                         finally { _launchCommandLine = ""; }
@@ -779,7 +785,7 @@ namespace Bloxstrap
                 AccountPlayersStarted++;
 
             // allow for window to show, since the log is created pretty far beforehand
-            Thread.Sleep(1000);
+            // Watcher readiness already provides the handoff barrier.
             return true;
         }
 
@@ -860,121 +866,6 @@ namespace Bloxstrap
 #endregion
 
         #region App Install
-        private async Task<bool> CheckForUpdates()
-        {
-            const string LOG_IDENT = "Bootstrapper::CheckForUpdates";
-            
-            // don't update if there's another instance running (likely running in the background)
-            // i don't like this, but there isn't much better way of doing it /shrug
-            if (Process.GetProcessesByName(App.ProjectName).Length > 1)
-            {
-                App.Logger.WriteLine(LOG_IDENT, $"More than one Bloxstrap instance running, aborting update check");
-                return false;
-            }
-
-            App.Logger.WriteLine(LOG_IDENT, "Checking for updates...");
-
-#if !DEBUG_UPDATER
-            var releaseInfo = await App.GetLatestRelease();
-
-            if (releaseInfo is null || !Version.TryParse(releaseInfo.TagName.TrimStart('v'), out var releaseVersion))
-                return false;
-
-            var asset = releaseInfo.Assets?.FirstOrDefault(item =>
-                string.Equals(item.Name, "Finstrap.exe", StringComparison.OrdinalIgnoreCase));
-            if (asset is null)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "The latest release has no Finstrap.exe asset.");
-                return false;
-            }
-
-            var versionComparison = Utilities.CompareVersions(App.Version, releaseInfo.TagName);
-
-            // check if we aren't using a deployed build, so we can update to one if a new version comes out
-            if (App.IsProductionBuild && versionComparison == VersionComparison.Equal || versionComparison == VersionComparison.GreaterThan)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "No updates found");
-                return false;
-            }
-
-            if (Dialog is not null)
-                Dialog.CancelEnabled = false;
-
-            string version = releaseInfo.TagName;
-#else
-            string version = App.Version;
-#endif
-
-            SetStatus(Strings.Bootstrapper_Status_UpgradingBloxstrap);
-
-            try
-            {
-#if DEBUG_UPDATER
-                string downloadLocation = Path.Combine(Paths.TempUpdates, $"{App.ProjectName}.exe");
-
-                Directory.CreateDirectory(Paths.TempUpdates);
-
-                File.Copy(Paths.Process, downloadLocation, true);
-#else
-                string updateDirectory = Path.Combine(Paths.TempUpdates, releaseVersion.ToString());
-                string downloadLocation = Path.Combine(updateDirectory, "Finstrap.exe");
-
-                Directory.CreateDirectory(updateDirectory);
-
-                App.Logger.WriteLine(LOG_IDENT, $"Downloading {releaseInfo.TagName}...");
-                
-                if (!File.Exists(downloadLocation))
-                {
-                    using var response = await App.HttpClient.GetAsync(asset.BrowserDownloadUrl);
-                    response.EnsureSuccessStatusCode();
-
-                    string partial = downloadLocation + ".part";
-                    await using (var fileStream = File.Create(partial))
-                        await response.Content.CopyToAsync(fileStream);
-                    File.Move(partial, downloadLocation, overwrite: true);
-                }
-#endif
-
-                App.Logger.WriteLine(LOG_IDENT, $"Starting {version}...");
-
-                ProcessStartInfo startInfo = new()
-                {
-                    FileName = downloadLocation,
-                };
-
-                startInfo.ArgumentList.Add("-upgrade");
-
-                foreach (string arg in App.LaunchSettings.Args)
-                    startInfo.ArgumentList.Add(arg);
-
-                if (_launchMode == LaunchMode.Player && !startInfo.ArgumentList.Contains("-player"))
-                    startInfo.ArgumentList.Add("-player");
-                else if (_launchMode == LaunchMode.Studio && !startInfo.ArgumentList.Contains("-studio"))
-                    startInfo.ArgumentList.Add("-studio");
-
-                App.Settings.Save();
-
-                new InterProcessLock("AutoUpdater");
-                
-                Process.Start(startInfo);
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "An exception occurred when running the auto-updater");
-                App.Logger.WriteException(LOG_IDENT, ex);
-
-                Frontend.ShowMessageBox(
-                    string.Format(Strings.Bootstrapper_AutoUpdateFailed, version),
-                    MessageBoxImage.Information
-                );
-
-                Utilities.ShellExecute(App.ProjectDownloadLink);
-            }
-
-            return false;
-        }
         #endregion
 
         #region Roblox Install
@@ -1442,6 +1333,44 @@ namespace Bloxstrap
                 Directory.Delete(modFontFamiliesFolder, true);
             }
 
+            const string flagPath = @"ClientSettings\ClientAppSettings.json";
+            var flagManager = IsStudioLaunch ? App.StudioFastFlags : App.FastFlags;
+            if (App.Settings.Prop.UseFastFlagManager && flagManager.IsSaved)
+            {
+                string destination = Path.Combine(_latestVersionDirectory, flagPath);
+                string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                modFolderFiles.Add(flagPath);
+                try
+                {
+                    using var document = JsonDocument.Parse(File.ReadAllText(flagManager.FileLocation));
+                    var flags = document.RootElement.EnumerateObject()
+                        .Where(flag => (IsStudioLaunch || FastFlagManager.PlayerAllowlist.Contains(flag.Name)) &&
+                            flag.Value.ValueKind is (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False) &&
+                            FastFlagManager.GetValidationError(flag.Name, flag.Value.ToString()) is null)
+                        .ToDictionary(flag => flag.Name, flag => flag.Value.ToString(), StringComparer.Ordinal);
+                    string json = JsonSerializer.Serialize(flags, new JsonSerializerOptions { WriteIndented = true });
+                    if (!File.Exists(destination) || File.ReadAllText(destination) != json)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                        File.WriteAllText(temporary, json);
+                        Filesystem.AssertReadOnly(destination);
+                        File.Move(temporary, destination, overwrite: true);
+                        Filesystem.AssertReadOnly(destination);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+                {
+                    App.Logger.WriteException(LOG_IDENT, ex);
+                    success = false;
+                }
+                finally
+                {
+                    try { File.Delete(temporary); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+
             foreach (string file in Directory.GetFiles(Paths.Modifications, "*.*", SearchOption.AllDirectories))
             {
                 if (_cancelTokenSource.IsCancellationRequested)
@@ -1457,7 +1386,7 @@ namespace Bloxstrap
                     continue;
                 }
 
-                if (!App.Settings.Prop.UseFastFlagManager && String.Equals(relativeFile, "ClientSettings\\ClientAppSettings.json", StringComparison.OrdinalIgnoreCase))
+                if (String.Equals(relativeFile, flagPath, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (relativeFile.EndsWith(".lock"))

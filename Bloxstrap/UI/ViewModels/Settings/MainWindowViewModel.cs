@@ -45,8 +45,10 @@ namespace Bloxstrap.UI.ViewModels.Settings
             App.Settings.Save();
             App.State.Save();
             App.FastFlags.Save();
+            if (App.StudioFastFlags.Changed)
+                App.StudioFastFlags.Save();
 
-            if (!App.Settings.LastSaveSucceeded || !App.State.LastSaveSucceeded || !App.FastFlags.LastSaveSucceeded)
+            if (!App.Settings.LastSaveSucceeded || !App.State.LastSaveSucceeded || !App.FastFlags.LastSaveSucceeded || App.StudioFastFlags.Changed)
                 return;
 
             foreach (var pair in App.PendingSettingTasks)

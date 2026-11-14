@@ -16,6 +16,15 @@ namespace Bloxstrap
         private bool _keepAwake;
         private string? _macroOverride;
 
+        public IntPtr GetSessionWindow()
+        {
+            if (!IsPlayerRunning())
+                return IntPtr.Zero;
+
+            using var process = Process.GetProcessById(ProcessId);
+            return process.MainWindowHandle;
+        }
+
         public int ProcessId => _watcherData?.ProcessId ?? 0;
         public SessionProfile? Profile
         {
@@ -157,11 +166,17 @@ namespace Bloxstrap
             if (_notifyIcon is null || _watcherData is null)
                 return;
 
+            Task channel = SessionChannel.ServeAsync(ProcessId, () => new SessionSnapshot(ProcessId,
+                _watcherData.ProcessStartTimeUtc, ActivityWatcher?.InGame == true && _watcherData.AccountUserId > 0 && ActivityWatcher.Data.UserId != _watcherData.AccountUserId
+                    ? 0 : _watcherData.AccountUserId > 0 ? _watcherData.AccountUserId : ActivityWatcher?.Data.UserId ?? 0,
+                ActivityWatcher?.InGame == true, ActivityWatcher?.InGame == true ? ActivityWatcher.Data.PlaceId : 0), _sessionEnded.Token);
             Task exited = _player!.WaitForExitAsync();
             Task activity = TrackActivityAsync();
             Task antiIdle = App.Settings.Prop.ForegroundAntiIdle ? RunAntiIdleAsync() : Task.CompletedTask;
             await exited;
             _sessionEnded.Cancel();
+            try { await _notifyIcon.FinishClipsAsync(); }
+            catch (Exception ex) { App.Logger.WriteException("Watcher::FinishClips", ex); }
 
             // Wait for pending input to release its keys before terminating this watcher.
             Task? playback = await App.Current.Dispatcher.InvokeAsync(() => _playbackTask);
@@ -170,7 +185,8 @@ namespace Bloxstrap
                 try { await playback; }
                 catch (Exception) { } // The tray command reports playback errors.
             }
-            await Task.WhenAll(activity, antiIdle);
+            try { await Task.WhenAll(activity, antiIdle, channel); }
+            catch (OperationCanceledException) when (_sessionEnded.IsCancellationRequested) { }
 
             if (_watcherData.AutoclosePids is not null)
             {
