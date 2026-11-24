@@ -45,6 +45,45 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
+        private readonly Dictionary<(long UserId, string Country), AccountSignInDialog> _filteredHomes = new();
+
+        private void OpenFilteredHome(SessionProfile? profile, string country)
+        {
+            if (profile is null)
+            {
+                var link = new AccountSignInDialog(null, new(), (id, name, key) =>
+                {
+                    SaveVerifiedAccount(id, name, key, new());
+                    profile = App.Settings.Prop.SessionProfiles.First(account => account.UserId == id);
+                }, linkOnly: true) { Owner = this };
+                if (link.ShowDialog() != true || profile is null)
+                    return;
+                RefreshAccounts();
+            }
+
+            var account = profile;
+            var key = (account.UserId, country);
+            if (_filteredHomes.TryGetValue(key, out var existing))
+            {
+                existing.Activate();
+                return;
+            }
+
+            var home = new AccountSignInDialog(account, new(), (_, _, _) => { }, country: country, homePlay: async target =>
+            {
+                if (_launchingAccounts)
+                    return "Finstrap is starting another game. Try again when that launch finishes.";
+                var linked = App.Settings.Prop.SessionProfiles.FirstOrDefault(item => item.UserId == account.UserId);
+                if (linked is null)
+                    return "This account is no longer linked. Add it again in Finstrap.";
+                await LaunchAccountsAsync(new[] { linked }, target, country);
+                return AccountStatus.Text;
+            }) { Owner = this };
+            _filteredHomes[key] = home;
+            home.Closed += (_, _) => _filteredHomes.Remove(key);
+            home.Show();
+        }
+
         internal void SetBrowserDestination(AccountLaunchTarget target)
         {
             string place = target.PlaceId.ToString(CultureInfo.InvariantCulture);

@@ -7,6 +7,8 @@
         public long ProcessStartTimeUtc { get; set; }
         public long AccountUserId { get; set; }
         public bool KeepDesktopApp { get; set; }
+        public Guid? ExpectedServerJobId { get; set; }
+        public string? ExpectedServerCountry { get; set; }
 
         public string? LogFile { get; set; }
 

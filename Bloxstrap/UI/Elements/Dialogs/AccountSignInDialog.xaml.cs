@@ -8,6 +8,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
 {
     public partial class AccountSignInDialog
     {
+        private static readonly RobloxDatacenters Datacenters = new(App.HttpClient);
         private const string RobloxOrigin = "https://www.roblox.com";
         private readonly SessionProfile? _profile;
         private readonly AccountLaunchTarget _target;
@@ -23,15 +24,19 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private readonly Action<long, string, string> _saveAccount;
         private readonly bool _linkOnly;
         private readonly bool _inspectServer;
+        private readonly Func<AccountLaunchTarget, Task<string>>? _homePlay;
+        private bool _homeLaunching;
         private readonly string? _country;
         internal ServerLocation? Location { get; private set; }
+        internal string? FailureReason { get; private set; }
         internal RobloxAccountLaunch? Result { get; private set; }
 
         internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target,
             Action<long, string, string> saveAccount, bool linkOnly = false,
-            string? country = null, bool inspectServer = false)
+            string? country = null, bool inspectServer = false, Func<AccountLaunchTarget, Task<string>>? homePlay = null)
         {
             _saveAccount = saveAccount;
+            _homePlay = homePlay;
             _linkOnly = linkOnly;
             _country = country;
             _inspectServer = inspectServer;
@@ -42,12 +47,18 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 : Guid.NewGuid().ToString("N");
             _signInStarted = _profileKey != profile?.LaunchProfileKey;
             InitializeComponent();
+            if (_homePlay is not null)
+            {
+                Title = $"Roblox Home — {_profile?.Name} ({_country})";
+                ContinueButton.Content = "Play this page";
+                ShowHomeStatus();
+            }
             _signInTimer.Tick += async (_, _) =>
             {
                 if (_autoCheck && _signInStarted)
                     await CheckAccountAsync();
             };
-            if (!_signInStarted && !_linkOnly)
+            if (!_signInStarted && !_linkOnly && _homePlay is null)
             {
                 Opacity = 0;
                 ShowActivated = false;
@@ -87,10 +98,22 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 web.Settings.AreDevToolsEnabled = false;
                 web.NavigationStarting += (_, args) => args.Cancel = !IsAllowedPage(args.Uri);
                 web.NewWindowRequested += (_, args) => args.Handled = true;
-                web.LaunchingExternalUriScheme += (_, args) => args.Cancel = true;
+                web.LaunchingExternalUriScheme += (_, args) =>
+                {
+                    args.Cancel = true;
+                    if (_homePlay is null || !args.IsUserInitiated || !IsAllowedPage(args.InitiatingOrigin))
+                        return;
+                    if (!args.Uri.StartsWith("roblox:", StringComparison.OrdinalIgnoreCase) &&
+                        !args.Uri.StartsWith("roblox-player:", StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    string url = args.Uri;
+                    Dispatcher.BeginInvoke(new Action(async () => await PlayFromHomeAsync(url, isProtocol: true)));
+                };
                 web.NavigationCompleted += OnNavigationCompleted;
                 web.Navigate(RobloxOrigin + (_signInStarted ? "/login" : "/home"));
-                _signInTimer.Start();
+                if (_homePlay is null)
+                    _signInTimer.Start();
 
                 await Task.Delay(TimeSpan.FromSeconds(12), _closed.Token);
                 if (Opacity == 0)
@@ -107,7 +130,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private bool IsAllowedPage(string address)
+        private static bool IsAllowedPage(string? address)
         {
             if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort || uri.UserInfo.Length != 0)
@@ -125,6 +148,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 return;
             }
 
+            if (_homePlay is not null)
+            {
+                ContinueButton.IsEnabled = !_homeLaunching && Browser.Source is Uri page &&
+                    Regex.IsMatch(page.AbsolutePath, @"\A/games/[0-9]+(?:/|\z)");
+                if (!_homeLaunching)
+                    ShowHomeStatus();
+                return;
+            }
+
             ContinueButton.IsEnabled = true;
             if (Browser.Source?.AbsolutePath.Equals("/login", StringComparison.OrdinalIgnoreCase) == true)
             {
@@ -139,7 +171,39 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private async void Continue_Click(object sender, RoutedEventArgs e) => await CheckAccountAsync();
+        private async void Continue_Click(object sender, RoutedEventArgs e)
+        {
+            if (_homePlay is not null && Browser.Source is { } page)
+                await PlayFromHomeAsync(page.AbsoluteUri, isProtocol: false);
+            else
+                await CheckAccountAsync();
+        }
+
+        private void ShowHomeStatus() => ShowStatus($"Server country: {_country}. Open a game and press Play or use Play this page.");
+
+        private async Task PlayFromHomeAsync(string url, bool isProtocol)
+        {
+            if (_homePlay is null || _homeLaunching || _closed.IsCancellationRequested)
+                return;
+
+            _homeLaunching = true;
+            ContinueButton.IsEnabled = false;
+            try
+            {
+                var target = isProtocol ? ServerRegionLookup.ParseBrowserPlay(url) : AccountLaunchTarget.Parse(url);
+                if (target is null || target.PlaceId <= 0)
+                    throw new FormatException("Open a public game page to use the country filter.");
+                ShowStatus($"Finding a server in {_country}…");
+                ShowStatus(await _homePlay(target));
+            }
+            catch (FormatException ex) { ShowStatus(ex.Message); }
+            finally
+            {
+                _homeLaunching = false;
+                if (!_closed.IsCancellationRequested)
+                    ContinueButton.IsEnabled = Browser.Source is Uri page && Regex.IsMatch(page.AbsolutePath, @"\A/games/[0-9]+(?:/|\z)");
+            }
+        }
 
         private async Task CheckAccountAsync()
         {
@@ -147,6 +211,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 return;
 
             _checking = true;
+            FailureReason = null;
             ContinueButton.IsEnabled = false;
             try
             {
@@ -201,7 +266,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 if (_inspectServer || _country is not null)
                 {
                     ShowStatus("Checking public server locations…");
-                    Location = await new ServerRegionLookup(App.HttpClient, session).FindAsync(target, _country, _closed.Token);
+                    Location = await new ServerRegionLookup(App.HttpClient, session, Datacenters).FindAsync(target, _country, _closed.Token);
                     if (_inspectServer)
                     {
                         DialogResult = true;
@@ -214,7 +279,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     target = await session.ResolveShareAsync(target, _closed.Token);
                 }
                 string ticket = await session.GetTicketAsync(_closed.Token);
-                Result = new RobloxAccountLaunch(userId, username, _profileKey, ticket, target);
+                Result = new RobloxAccountLaunch(userId, username, _profileKey, ticket, target, Location);
                 DialogResult = true;
             }
             catch (OperationCanceledException) when (_closed.IsCancellationRequested) { }
@@ -241,6 +306,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private void ShowLaunchError(string message)
         {
             _autoCheck = false;
+            FailureReason = message;
             ShowStatus(message);
         }
 

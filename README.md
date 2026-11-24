@@ -17,11 +17,13 @@ The first settings write preserves the existing file as `Settings.json.pre-comma
 
 ## Server location and country filter
 
-Choose a **Server country** in the launch menu to save a country filter. Enter a public game link or place ID, select a linked account, then launch. Finstrap searches a limited set of public servers with open slots and targets a specific instance whose estimated country matches. If no match is found or location is unavailable, the filtered launch stops. **Any region** restores standard matchmaking.
+Choose a **Server country** in the launch menu. Finstrap searches public servers with open slots across multiple pages and uses Roblox connection metadata and [RoSeal’s datacenter map](https://github.com/RoSeal-Extension/Data) to estimate the country. It targets a specific matching instance. If the bounded search cannot find a match, the filtered launch stops. **Any region** restores standard matchmaking.
 
-**Check server location** shows an estimate without starting Roblox. For an exact public server link, it checks that server. For a game link, it checks for an available server, using the country filter if set. Roblox connection metadata is requested with your selected account. Finstrap sends only the reported public connection IP to IPinfo. The estimate can describe a relay rather than the server host, and Roblox may move or teleport players after launch.
+**Check server location** estimates location without opening Roblox. When you check an exact public server link, Finstrap looks up that specific instance. With **Any region**, a public connection IP can be sent to IPinfo to estimate an otherwise unknown location. Generic IP estimates do not qualify a server for filtered Play. Your Roblox session is used only with Roblox endpoints.
 
-With the filter enabled, browser Play links handled by Finstrap open the launch menu with the public game or server prefilled for account selection. Private invites, joining friends, and Roblox Home do not support country filtering.
+Enter **0** with a country selected to open a filtered Roblox Home window in Finstrap for that account. Browse games there and press Play or use **Play this page**. The window keeps the selected country for the next game. Close your current Roblox game before launching another with the same account. Native Roblox Home and in-game teleports make their own matchmaking decisions.
+
+Supported browser Play links handled by Finstrap open the launch menu with the game filled in. Private invites and joining friends are available with **Any region**. Finstrap logs whether Roblox’s first observed join used the selected instance. An instance match confirms the job ID. It does not independently confirm the physical datacenter.
 
 ## Roblox sessions
 

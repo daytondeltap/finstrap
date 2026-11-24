@@ -148,52 +148,115 @@ finally { Directory.Delete(Paths.Base, recursive: true); }
 
 static async Task CheckServerRegionsAsync(Action<bool, string> check)
 {
-    Guid other = Guid.NewGuid(), match = Guid.NewGuid(), full = Guid.NewGuid();
-    var publicHandler = new FakeHandler();
-    var accountHandler = new FakeHandler();
-    using var publicClient = new HttpClient(publicHandler);
-    using var accountClient = new HttpClient(accountHandler);
-    var lookup = new ServerRegionLookup(publicClient, new RobloxAccountSession(accountClient));
-    publicHandler.Responses.Enqueue(Json($$"""
-        {"data":[{"id":"{{full}}","playing":10,"maxPlayers":10},
-                 {"id":"{{other}}","playing":2,"maxPlayers":10},
-                 {"id":"{{match}}","playing":1,"maxPlayers":10}],"nextPageCursor":null}
-        """));
-    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{other}}}","MachineAddress":"8.8.8.8"}}"""));
-    publicHandler.Responses.Enqueue(Json("""{"country":"US","city":"Dallas"}"""));
-    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{match}}}","MachineAddress":"10.1.2.3","UdmuxEndpoints":[{"Address":"1.1.1.1"}]}}"""));
-    publicHandler.Responses.Enqueue(Json("""{"country":"SG","city":"Singapore"}"""));
+    const string directory = """
+        [
+          {"dataCenterIds":[1],"robloxIps":["128.116.56.33"],"location":{"country":"US","city":"Ashburn"}},
+          {"dataCenterIds":[2],"robloxIps":["128.116.97.33"],"location":{"country":"SG","city":"Singapore"}}
+        ]
+        """;
+
+    var jobs = Enumerable.Range(0, 20).Select(_ => Guid.NewGuid()).ToArray();
+    Guid full = Guid.NewGuid();
+    int directoryDownloads = 0;
+    int probes = 0;
+    bool checkListingThrottle = false;
+    bool listingThrottled = false;
+    using var publicClient = new HttpClient(new ScriptedHandler((request, _) =>
+    {
+        if (request.RequestUri!.Host == "data.roseal.live")
+        {
+            directoryDownloads++;
+            return Json(directory);
+        }
+        if (request.RequestUri.Host != "games.roblox.com")
+            throw new Exception("Strict matchmaking sent an IP to a geolocation service.");
+        bool high = request.RequestUri.Query.Contains("sortOrder=Desc");
+        bool next = request.RequestUri.Query.Contains("cursor=");
+        if (checkListingThrottle && high)
+        {
+            listingThrottled = true;
+            return new(HttpStatusCode.TooManyRequests);
+        }
+        var ids = checkListingThrottle ? jobs : next ? jobs[18..] : high ? jobs[9..18] : jobs[..9];
+        return Json(JsonSerializer.Serialize(new
+        {
+            data = ids.Prepend(full).Select(id => new { id, playing = id == full ? 10 : 2, maxPlayers = 10 }),
+            nextPageCursor = next ? null : "page 2"
+        }));
+    }));
+
+    Guid candidate = jobs[19];
+    bool overload = false;
+    using var accountClient = new HttpClient(new ScriptedHandler((_, body) =>
+    {
+        probes++;
+        using var doc = JsonDocument.Parse(body!);
+        Guid job = doc.RootElement.GetProperty("gameId").GetGuid();
+        if (job == full) throw new Exception("Full server was probed.");
+        if (overload) return new(HttpStatusCode.TooManyRequests);
+        if (checkListingThrottle)
+            return Json(listingThrottled ? """{"joinScript":{"DataCenterId":2}}""" : """{"joinScript":{"DataCenterId":1}}""");
+        if (job == jobs[0]) return new(HttpStatusCode.ServiceUnavailable);
+        if (job == jobs[9]) return new(HttpStatusCode.Conflict);
+        if (job == jobs[1])
+            return Json("""{"joinScript":{"MachineAddress":"10.0.0.1","UdmuxEndpoints":[{"Address":"128.116.97.33"},{"Address":"128.116.56.33"}]}}""");
+        if (job == jobs[2])
+            return Json("""{"joinScript":{"MachineAddress":"8.8.8.8"}}""");
+        if (job == candidate)
+            return Json(JsonSerializer.Serialize(new { joinScript = new { GameId = job, PlaceId = 123, DataCenterId = "2",
+                UdmuxEndpoints = new[] { new { Address = "128.116.56.33" } } } }));
+        return Json("""{"joinScript":{"DataCenterId":1}}""");
+    }));
+
+    var lookup = new ServerRegionLookup(publicClient, new RobloxAccountSession(accountClient), new RobloxDatacenters(publicClient));
     var found = await lookup.FindAsync(new(PlaceId: 123), "SG", default);
-    check(found.JobId == match && found.City == "Singapore" && accountHandler.Requests.Count == 2,
-        "region lookup skips full servers and selects the matching specific instance");
+    check(found.JobId == candidate && found.City == "Singapore" && probes == jobs.Length,
+        "regional search reaches later pages and skips closed, full, conflicting and unavailable servers");
+    check(directoryDownloads == 1, "datacenter map is reused across probes");
+
     var launchUrl = new AccountLaunchTarget(PlaceId: 123, JobId: found.JobId.ToString("D")).GetPlaceLauncherUrl();
     check(launchUrl!.Contains("RequestGameJob"), "regional launch uses an exact instance instead of matchmaking");
     var fromBrowser = ServerRegionLookup.ParseBrowserPlay("roblox-player:1+launchmode:play+placelauncherurl:" + Uri.EscapeDataString(launchUrl));
-    check(fromBrowser.PlaceId == 123 && Guid.Parse(fromBrowser.JobId!) == match, "browser Play preserves the place and job");
+    check(fromBrowser.PlaceId == 123 && Guid.Parse(fromBrowser.JobId!) == candidate, "browser Play preserves the place and job");
+    var legacyPlay = ServerRegionLookup.ParseBrowserPlay($"roblox://placeId=123&gameInstanceId={candidate}");
+    check(legacyPlay == fromBrowser, "legacy Roblox Play preserves the selected job");
+    check(new AccountLaunchTarget().IsHome && !new AccountLaunchTarget(UserId: 123).IsHome &&
+        !new AccountLaunchTarget(ShareCode: "private").IsHome, "filtered Home does not replace friend or private-server destinations");
 
-    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{other}}}","MachineAddress":"8.8.8.8"}}"""));
-    try
+    async Task RejectAsync(Guid job, string message)
     {
-        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
-        check(false, "different country blocks an explicit server");
+        try
+        {
+            await lookup.FindAsync(new(PlaceId: 123, JobId: job.ToString("D")), "SG", default);
+        }
+        catch (FormatException ex)
+        {
+            check(ex.Message.Contains(message), $"regional launch rejects {message}");
+            return;
+        }
+        throw new Exception("Expected filtered server to be rejected.");
     }
-    catch (FormatException) { check(true, "different country blocks an explicit server"); }
 
-    accountHandler.Responses.Enqueue(Json("""{"joinScript":{"MachineAddress":"192.168.1.5"}}"""));
-    try
+    await RejectAsync(jobs[3], "outside the selected country");
+    await RejectAsync(jobs[1], "No usable location");
+    await RejectAsync(jobs[2], "No usable location");
+    overload = true;
+    await RejectAsync(jobs[3], "limiting server lookups");
+    overload = false;
+    int matched = 0;
+    for (int i = 0; i < 10; i++)
     {
-        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
-        check(false, "unavailable location blocks launch");
+        candidate = jobs[i + 3];
+        if (candidate == jobs[9]) candidate = jobs[18];
+        var result = await lookup.FindAsync(new(PlaceId: 123), "SG", default);
+        if (result.JobId == candidate && result.Country == "SG")
+            matched++;
     }
-    catch (FormatException) { check(publicHandler.Requests.Count == 3, "private IP stays local and unknown location blocks launch"); }
+    check(matched == 10, $"matched {matched}/10 simulated searches with the eligible server in different positions");
 
-    accountHandler.Responses.Enqueue(new(HttpStatusCode.TooManyRequests));
-    try
-    {
-        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
-        check(false, "rate limiting stops launch");
-    }
-    catch (FormatException ex) { check(ex.Message.Contains("rate limited"), "rate limiting stops lookup with an actionable message"); }
+    checkListingThrottle = true;
+    var recovered = await lookup.FindAsync(new(PlaceId: 123), "SG", default);
+    check(listingThrottled && recovered.Country == "SG", "lookup reuses downloaded candidates when a later listing is rate limited");
 }
 
 static bool Dispose(IDisposable? value) { value?.Dispose(); return true; }
@@ -219,4 +282,11 @@ public class FakeHandler : HttpMessageHandler
             request.Content is null ? null : await request.Content.ReadAsStringAsync(token)));
         return Responses.Dequeue();
     }
+}
+
+
+internal sealed class ScriptedHandler(Func<HttpRequestMessage, string?, HttpResponseMessage> respond) : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+        respond(request, request.Content is null ? null : await request.Content.ReadAsStringAsync(token));
 }

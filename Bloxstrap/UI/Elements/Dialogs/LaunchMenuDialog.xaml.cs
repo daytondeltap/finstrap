@@ -97,22 +97,41 @@ namespace Bloxstrap.UI.Elements.Dialogs
             await LaunchAccountsAsync(accounts);
         }
 
-        private async Task LaunchAccountsAsync(IReadOnlyList<SessionProfile?> accounts)
+        private async Task LaunchAccountsAsync(IReadOnlyList<SessionProfile?> accounts,
+            AccountLaunchTarget? homeDestination = null, string? homeCountry = null)
         {
             if (_launchingAccounts)
                 return;
             _launchingAccounts = true;
             LaunchActions.IsEnabled = false;
             var locations = new List<ServerLocation>();
+            var failures = new List<string>();
             try
             {
+                string? country = homeCountry ?? SelectedServerCountry;
+                var destination = homeDestination ?? AccountLaunchTarget.Parse(AccountDestination.Text);
+                if (country is not null)
+                {
+                    var homeAccounts = accounts.Where(profile =>
+                        (destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0)).IsHome).ToArray();
+                    foreach (var profile in homeAccounts)
+                        OpenFilteredHome(profile, country);
+                    if (homeAccounts.Length > 0)
+                    {
+                        accounts = accounts.Except(homeAccounts).ToArray();
+                        if (accounts.Count == 0)
+                        {
+                            AccountStatus.Text = "Choose games in the filtered Roblox Home window.";
+                            return;
+                        }
+                    }
+                }
+
                 await RefreshSessionsAsync();
                 accounts = accounts.Where(p => p is null || !ActiveSessions.Any(s => s.UserId == p.UserId)).ToArray();
                 if (accounts.Count == 0) { AccountStatus.Text = "These accounts already have tracked sessions."; return; }
                 Queue.Begin(accounts.Where(p => p is not null).Select(p => p!.UserId));
                 AccountStatus.Text = "Preparing Roblox…";
-                string? country = SelectedServerCountry;
-                var destination = AccountLaunchTarget.Parse(AccountDestination.Text);
                 if (destination is not null && country is null)
                     destination = await destination.ResolveFriendAsync();
 
@@ -130,7 +149,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                         {
                             try
                             {
-                                var result = SignIn(profile, target, country, locations);
+                                var result = SignIn(profile, target, country, locations, failures);
                                 if (profile is not null) Queue.Set(profile.UserId, result is null ? AccountLaunchState.Cancelled : AccountLaunchState.Starting);
                                 return result;
                             }
@@ -157,6 +176,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     : $"Started {started} of {accounts.Count} requested Roblox clients.";
                 if (locations.Count > 0)
                     AccountStatus.Text += "\nSelected server locations (estimated): " + string.Join("; ", locations.Distinct().Select(location => location.ToString()).Distinct());
+                if (failures.Count > 0)
+                    AccountStatus.Text += "\n" + string.Join("\n", failures.Distinct());
             }
             catch (Exception ex) when (ex is FormatException or IOException)
             {
@@ -177,11 +198,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target, string? country, List<ServerLocation> locations)
+        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target, string? country, List<ServerLocation> locations, List<string> failures)
         {
             var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target), country: country) { Owner = this };
             if (dialog.ShowDialog() != true || dialog.Result is not { } launch)
+            {
+                if (dialog.FailureReason is { } reason)
+                    failures.Add(reason);
                 return null;
+            }
 
             if (ActiveSessions.Any(session => session.UserId == launch.UserId))
                 return null;
