@@ -11,8 +11,8 @@
     <UseWindowsForms>True</UseWindowsForms>
     <IncludeNativeLibrariesForSelfExtract Condition="'$(PublishSingleFile)' == 'true'">true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationIcon>Bloxstrap.ico</ApplicationIcon>
-    <Version>2.12.9</Version>
-    <FileVersion>2.12.9</FileVersion>
+    <Version>2.12.10</Version>
+    <FileVersion>2.12.10</FileVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
