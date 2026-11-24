@@ -33,6 +33,26 @@ namespace Bloxstrap.Integrations
             return AccountLaunchTarget.FromPrivateShare(await response.Content.ReadAsStringAsync(token));
         }
 
+        public async Task<IPAddress?> GetServerAddressAsync(long placeId, Guid jobId, CancellationToken token)
+        {
+            using var response = await PostAsync("https://gamejoin.roblox.com/v1/join-game-instance",
+                JsonSerializer.SerializeToUtf8Bytes(new { placeId, gameId = jobId }), token);
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+                return null;
+            response.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            var root = body.RootElement;
+            if (!root.TryGetProperty("joinScript", out var script) || script.ValueKind != JsonValueKind.Object)
+                return null;
+            if (script.TryGetProperty("GameId", out var game) &&
+                (game.ValueKind != JsonValueKind.String || !Guid.TryParse(game.GetString(), out Guid actual) || actual != jobId))
+                return null;
+            if (script.TryGetProperty("PlaceId", out var place) &&
+                (!long.TryParse(place.ToString(), out long actualPlace) || actualPlace != placeId))
+                return null;
+            return ServerRegionLookup.ReadAddress(script);
+        }
+
         public async Task<string> GetTicketAsync(CancellationToken token)
         {
             // Roblox's web launcher sends the signed client assertion as the ticket request body.

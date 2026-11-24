@@ -15,6 +15,14 @@ The launch menu includes account cards, verified session status, and named launc
 
 The first settings write preserves the existing file as `Settings.json.pre-command-center.bak`. Concurrent settings changes are rejected instead of overwriting another window's changes.
 
+## Server location and country filter
+
+Choose a **Server country** in the launch menu to save a country filter. Enter a public game link or place ID, select a linked account, then launch. Finstrap searches a limited set of public servers with open slots and targets a specific instance whose estimated country matches. If no match is found or location is unavailable, the filtered launch stops. **Any region** restores standard matchmaking.
+
+**Check server location** shows an estimate without starting Roblox. For an exact public server link, it checks that server. For a game link, it checks for an available server, using the country filter if set. Roblox connection metadata is requested with your selected account. Finstrap sends only the reported public connection IP to IPinfo. The estimate can describe a relay rather than the server host, and Roblox may move or teleport players after launch.
+
+With the filter enabled, browser Play links handled by Finstrap open the launch menu with the public game or server prefilled for account selection. Private invites, joining friends, and Roblox Home do not support country filtering.
+
 ## Roblox sessions
 
 - **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility. If an update is required, Finstrap waits for existing clients to close before updating on the next launch.

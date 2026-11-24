@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Bloxstrap/Integrations/ServerRegionLookup.cs" Link="ServerRegionLookup.cs" />
     <Compile Include="../Bloxstrap/Integrations/WindowLayoutMath.cs" Link="WindowLayoutMath.cs" />
     <Compile Include="../Bloxstrap/Integrations/SessionChannel.cs" Link="SessionChannel.cs" />
     <Compile Include="../Bloxstrap/Integrations/AccountLaunchCoordinator.cs" Link="AccountLaunchCoordinator.cs" />

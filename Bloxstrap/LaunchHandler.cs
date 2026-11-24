@@ -67,6 +67,34 @@ namespace Bloxstrap
             else if (App.LaunchSettings.RobloxLaunchMode != LaunchMode.None)
             {
                 App.Logger.WriteLine(LOG_IDENT, $"Opening bootstrapper ({App.LaunchSettings.RobloxLaunchMode})");
+                if (App.LaunchSettings.RobloxLaunchMode == LaunchMode.Player &&
+                    !string.IsNullOrEmpty(App.LaunchSettings.RobloxLaunchArgs) &&
+                    !App.LaunchSettings.QuietFlag.Active &&
+                    !string.IsNullOrEmpty(App.Settings.Prop.PreferredServerCountry))
+                {
+                    try
+                    {
+                        var target = Integrations.ServerRegionLookup.ParseBrowserPlay(App.LaunchSettings.RobloxLaunchArgs);
+                        var menu = new LaunchMenuDialog();
+                        menu.SetBrowserDestination(target);
+                        menu.ShowDialog();
+                        ProcessNextAction(menu.CloseAction);
+                    }
+                    catch (FormatException ex)
+                    {
+                        Frontend.ShowMessageBox(ex.Message, MessageBoxImage.Warning);
+                        App.Terminate();
+                    }
+                    return;
+                }
+                if (App.LaunchSettings.RobloxLaunchMode == LaunchMode.Player &&
+                    !string.IsNullOrEmpty(App.Settings.Prop.PreferredServerCountry) &&
+                    !string.IsNullOrEmpty(App.LaunchSettings.RobloxLaunchArgs))
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Filtered Roblox launch requires interactive account selection.");
+                    App.Terminate();
+                    return;
+                }
                 LaunchRoblox(App.LaunchSettings.RobloxLaunchMode);
             }
             else if (!App.LaunchSettings.QuietFlag.Active)

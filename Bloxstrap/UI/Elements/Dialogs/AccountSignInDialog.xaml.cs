@@ -22,13 +22,19 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private long? _verifiedUserId;
         private readonly Action<long, string, string> _saveAccount;
         private readonly bool _linkOnly;
+        private readonly bool _inspectServer;
+        private readonly string? _country;
+        internal ServerLocation? Location { get; private set; }
         internal RobloxAccountLaunch? Result { get; private set; }
 
         internal AccountSignInDialog(SessionProfile? profile, AccountLaunchTarget target,
-            Action<long, string, string> saveAccount, bool linkOnly = false)
+            Action<long, string, string> saveAccount, bool linkOnly = false,
+            string? country = null, bool inspectServer = false)
         {
             _saveAccount = saveAccount;
             _linkOnly = linkOnly;
+            _country = country;
+            _inspectServer = inspectServer;
             _profile = profile;
             _target = target;
             _profileKey = profile?.LaunchProfileKey is string key && Guid.TryParseExact(key, "N", out _)
@@ -191,7 +197,22 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     DialogResult = true;
                     return;
                 }
-                var target = await session.ResolveShareAsync(_target, _closed.Token);
+                var target = _target;
+                if (_inspectServer || _country is not null)
+                {
+                    ShowStatus("Checking public server locations…");
+                    Location = await new ServerRegionLookup(App.HttpClient, session).FindAsync(target, _country, _closed.Token);
+                    if (_inspectServer)
+                    {
+                        DialogResult = true;
+                        return;
+                    }
+                    target = target with { JobId = Location.JobId.ToString("D") };
+                }
+                else
+                {
+                    target = await session.ResolveShareAsync(target, _closed.Token);
+                }
                 string ticket = await session.GetTicketAsync(_closed.Token);
                 Result = new RobloxAccountLaunch(userId, username, _profileKey, ticket, target);
                 DialogResult = true;

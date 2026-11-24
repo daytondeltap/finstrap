@@ -211,7 +211,10 @@ namespace Bloxstrap.UI.Elements.Dialogs
         {
             if(_launchingAccounts)return;
             if(AccountsList.SelectedItems.Count>0) await ConfirmAndLaunchAsync(Cards.Where(c=>AccountsList.SelectedItems.Contains(c)).Select(c=>c.Profile).ToArray());
-            else ((Bloxstrap.UI.ViewModels.Installer.LaunchMenuViewModel)DataContext).LaunchRobloxCommand.Execute(null);
+            else if (SelectedServerCountry is not null)
+                AccountStatus.Text = "Select a linked account and enter a public game to launch with the country filter.";
+            else
+                ((Bloxstrap.UI.ViewModels.Installer.LaunchMenuViewModel)DataContext).LaunchRobloxCommand.Execute(null);
         }
         private void Tile_Click(object sender,RoutedEventArgs e)
         {

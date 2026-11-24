@@ -11,6 +11,7 @@ Paths.Base = Path.Combine(Path.GetTempPath(), "finstrap-tests-" + Guid.NewGuid()
 Directory.CreateDirectory(Paths.Base);
 try
 {
+    await CheckServerRegionsAsync(Check);
     var fit = WindowLayoutMath.Fit(.75,.9,.5,.5,-1920,0,1920,1080);
     Check(fit.X == -960 && fit.Y == 540 && fit.Width == 960, "layouts clamp to monitor bounds including negative origins");
     fit = WindowLayoutMath.Fit(double.NaN,double.PositiveInfinity,double.MaxValue,-1,0,0,800,600);
@@ -144,6 +145,56 @@ try
     Console.WriteLine($"{passed} regression checks passed.");
 }
 finally { Directory.Delete(Paths.Base, recursive: true); }
+
+static async Task CheckServerRegionsAsync(Action<bool, string> check)
+{
+    Guid other = Guid.NewGuid(), match = Guid.NewGuid(), full = Guid.NewGuid();
+    var publicHandler = new FakeHandler();
+    var accountHandler = new FakeHandler();
+    using var publicClient = new HttpClient(publicHandler);
+    using var accountClient = new HttpClient(accountHandler);
+    var lookup = new ServerRegionLookup(publicClient, new RobloxAccountSession(accountClient));
+    publicHandler.Responses.Enqueue(Json($$"""
+        {"data":[{"id":"{{full}}","playing":10,"maxPlayers":10},
+                 {"id":"{{other}}","playing":2,"maxPlayers":10},
+                 {"id":"{{match}}","playing":1,"maxPlayers":10}],"nextPageCursor":null}
+        """));
+    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{other}}}","MachineAddress":"8.8.8.8"}}"""));
+    publicHandler.Responses.Enqueue(Json("""{"country":"US","city":"Dallas"}"""));
+    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{match}}}","MachineAddress":"10.1.2.3","UdmuxEndpoints":[{"Address":"1.1.1.1"}]}}"""));
+    publicHandler.Responses.Enqueue(Json("""{"country":"SG","city":"Singapore"}"""));
+    var found = await lookup.FindAsync(new(PlaceId: 123), "SG", default);
+    check(found.JobId == match && found.City == "Singapore" && accountHandler.Requests.Count == 2,
+        "region lookup skips full servers and selects the matching specific instance");
+    var launchUrl = new AccountLaunchTarget(PlaceId: 123, JobId: found.JobId.ToString("D")).GetPlaceLauncherUrl();
+    check(launchUrl!.Contains("RequestGameJob"), "regional launch uses an exact instance instead of matchmaking");
+    var fromBrowser = ServerRegionLookup.ParseBrowserPlay("roblox-player:1+launchmode:play+placelauncherurl:" + Uri.EscapeDataString(launchUrl));
+    check(fromBrowser.PlaceId == 123 && Guid.Parse(fromBrowser.JobId!) == match, "browser Play preserves the place and job");
+
+    accountHandler.Responses.Enqueue(Json($$$"""{"joinScript":{"GameId":"{{{other}}}","MachineAddress":"8.8.8.8"}}"""));
+    try
+    {
+        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
+        check(false, "different country blocks an explicit server");
+    }
+    catch (FormatException) { check(true, "different country blocks an explicit server"); }
+
+    accountHandler.Responses.Enqueue(Json("""{"joinScript":{"MachineAddress":"192.168.1.5"}}"""));
+    try
+    {
+        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
+        check(false, "unavailable location blocks launch");
+    }
+    catch (FormatException) { check(publicHandler.Requests.Count == 3, "private IP stays local and unknown location blocks launch"); }
+
+    accountHandler.Responses.Enqueue(new(HttpStatusCode.TooManyRequests));
+    try
+    {
+        await lookup.FindAsync(new(PlaceId: 123, JobId: other.ToString("D")), "SG", default);
+        check(false, "rate limiting stops launch");
+    }
+    catch (FormatException ex) { check(ex.Message.Contains("rate limited"), "rate limiting stops lookup with an actionable message"); }
+}
 
 static bool Dispose(IDisposable? value) { value?.Dispose(); return true; }
 static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };

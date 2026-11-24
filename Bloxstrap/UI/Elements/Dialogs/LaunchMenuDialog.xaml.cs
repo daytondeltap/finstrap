@@ -25,6 +25,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             InitializeComponent();
             RefreshAccounts();
             InitializeDashboard();
+            InitializeServerCountries();
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -89,8 +90,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 AccountStatus.Text = "Enable multi-instance launching in Settings → Integrations first.";
                 return;
             }
+            string? country = SelectedServerCountry;
             string preview = string.Join("\n", accounts.Select((p,i) => $"{i+1}. {p.Name} → {(string.IsNullOrWhiteSpace(AccountDestination.Text) ? p.PlaceId.ToString() : AccountDestination.Text)}"));
-            if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview, MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
+            if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview + (country is null ? "" : $"\n\nServer country: {country} (estimated)"), MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 return;
             await LaunchAccountsAsync(accounts);
         }
@@ -101,6 +103,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 return;
             _launchingAccounts = true;
             LaunchActions.IsEnabled = false;
+            var locations = new List<ServerLocation>();
             try
             {
                 await RefreshSessionsAsync();
@@ -108,8 +111,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 if (accounts.Count == 0) { AccountStatus.Text = "These accounts already have tracked sessions."; return; }
                 Queue.Begin(accounts.Where(p => p is not null).Select(p => p!.UserId));
                 AccountStatus.Text = "Preparing Roblox…";
+                string? country = SelectedServerCountry;
                 var destination = AccountLaunchTarget.Parse(AccountDestination.Text);
-                if (destination is not null)
+                if (destination is not null && country is null)
                     destination = await destination.ResolveFriendAsync();
 
                 var launches = new List<Func<Task<RobloxAccountLaunch?>>>(accounts.Count);
@@ -126,7 +130,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                         {
                             try
                             {
-                                var result = SignIn(profile, target);
+                                var result = SignIn(profile, target, country, locations);
                                 if (profile is not null) Queue.Set(profile.UserId, result is null ? AccountLaunchState.Cancelled : AccountLaunchState.Starting);
                                 return result;
                             }
@@ -151,6 +155,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 AccountStatus.Text = started == accounts.Count
                     ? started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
                     : $"Started {started} of {accounts.Count} requested Roblox clients.";
+                if (locations.Count > 0)
+                    AccountStatus.Text += "\nSelected server locations (estimated): " + string.Join("; ", locations.Distinct().Select(location => location.ToString()).Distinct());
             }
             catch (Exception ex) when (ex is FormatException or IOException)
             {
@@ -171,13 +177,17 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target)
+        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target, string? country, List<ServerLocation> locations)
         {
-            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target)) { Owner = this };
+            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target), country: country) { Owner = this };
             if (dialog.ShowDialog() != true || dialog.Result is not { } launch)
                 return null;
 
-            return ActiveSessions.Any(session => session.UserId == launch.UserId) ? null : launch;
+            if (ActiveSessions.Any(session => session.UserId == launch.UserId))
+                return null;
+            if (dialog.Location is { } location)
+                locations.Add(location);
+            return launch;
         }
 
         private void SaveVerifiedAccount(long userId, string username, string profileKey, AccountLaunchTarget target)
