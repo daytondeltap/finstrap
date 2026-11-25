@@ -27,6 +27,7 @@
         public static string Application { get; private set; } = "";
 
         public static string CustomFont => Path.Combine(Modifications, "content\\fonts\\CustomFont.ttf");
+        public static string LastPublicServers => Path.Combine(Base, "LastPublicServers");
 
         public static bool Initialized => !String.IsNullOrEmpty(Base);
 

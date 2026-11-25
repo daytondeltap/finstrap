@@ -48,6 +48,26 @@
             </ui:CardAction>
         </Grid>
 
+        <TextBlock Text="Mod packs" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
+        <TextBlock Text="Import local cursor and sound ZIPs. Save changes, then restart all Roblox Player windows to apply them."
+                   TextWrapping="Wrap" Margin="0,4,0,8" />
+        <WrapPanel Margin="0,0,0,8">
+            <ui:Button x:Name="ImportPackButton" Content="Import ZIP" Click="ImportPack_Click" Margin="0,0,6,4" />
+            <ui:Button x:Name="TogglePackButton" Content="Enable or disable" Click="TogglePack_Click" Margin="0,0,6,4" />
+            <ui:Button Content="Move up" Click="MovePackUp_Click" Margin="0,0,6,4" />
+            <ui:Button Content="Move down" Click="MovePackDown_Click" Margin="0,0,6,4" />
+            <ui:Button Content="Remove" Click="RemovePack_Click" Margin="0,0,6,4" />
+            <ui:Button Content="Disable all packs" Click="DisablePacks_Click" Margin="0,0,6,4" />
+        </WrapPanel>
+        <ListBox x:Name="PackList" AutomationProperties.Name="Installed mod packs" DisplayMemberPath="Label"
+                 SelectionChanged="PackSelected" MinHeight="42" MaxHeight="150" />
+        <TextBlock x:Name="PackDetails" TextWrapping="Wrap" Margin="0,6,0,4" />
+        <ComboBox x:Name="PackAssetList" AutomationProperties.Name="Pack assets" SelectionChanged="PackAssetSelected" />
+        <Image x:Name="PackImagePreview" MaxHeight="128" MaxWidth="160" HorizontalAlignment="Left" Margin="0,8,0,0" />
+        <ui:Button x:Name="PlayPackSound" Content="Play sound preview" Click="PlayPackSound_Click"
+                   Visibility="Collapsed" Margin="0,8,0,0" />
+        <TextBlock x:Name="PackStatus" TextWrapping="Wrap" Margin="0,8,0,0" />
+
         <TextBlock Text="{x:Static resources:Strings.Common_Presets}" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
 
         <controls:OptionControl 

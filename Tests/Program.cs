@@ -12,6 +12,8 @@ Directory.CreateDirectory(Paths.Base);
 try
 {
     await CheckServerRegionsAsync(Check);
+    LocalModPackChecks.Run(Paths.Base, Check);
+    BuildAndRejoinChecks.Run(Paths.Base, Check);
     var fit = WindowLayoutMath.Fit(.75,.9,.5,.5,-1920,0,1920,1080);
     Check(fit.X == -960 && fit.Y == 540 && fit.Width == 960, "layouts clamp to monitor bounds including negative origins");
     fit = WindowLayoutMath.Fit(double.NaN,double.PositiveInfinity,double.MaxValue,-1,0,0,800,600);
@@ -39,10 +41,12 @@ try
     Check(queue.States[1] == AccountLaunchState.Ready && queue.States[2] == AccountLaunchState.Queued && !queue.CancelRemaining, "retry queues failed account without restarting successful account");
     queue.Finish();
     Check(queue.States[2] == AccountLaunchState.Failed, "uncompleted launch is not reported ready");
-    var group = new Bloxstrap.Models.Persistable.LaunchGroup { Name = "Daily", Accounts = new() { 23, 12 }, Destination = "456" };
+    var group = new Bloxstrap.Models.Persistable.LaunchGroup { Name = "Daily", Accounts = new() { 23, 12 }, Destination = "456", PlayerChannel = "production" };
     group.Layout[23] = new() { Monitor = "display", X = .5, Width = .5 };
     var roundtrip = JsonSerializer.Deserialize<Bloxstrap.Models.Persistable.LaunchGroup>(JsonSerializer.Serialize(group))!;
     Check(roundtrip.Id == group.Id && roundtrip.Version == 1 && roundtrip.Accounts.SequenceEqual(new long[] { 23, 12 }) && roundtrip.Layout[23].X == .5, "launch group order, identity and layout survive serialization");
+    Check(roundtrip.PlayerChannel == "production" && JsonSerializer.Deserialize<Bloxstrap.Models.Persistable.LaunchGroup>("{}")!.PlayerChannel is null,
+        "named group channels persist and existing groups inherit the default");
     var settings = new JsonManager<TestSettings>();
     settings.Load();
     Check(!settings.HasUnsavedChanges, "new settings start clean");

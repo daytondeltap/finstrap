@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
@@ -19,6 +20,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
             SmokeMode = true;
             await VerifySessionSettingsAsync();
             VerifyFastFlagEditor();
+            await VerifyModPackPageAsync(directory);
+            VerifyRobloxVersionsPage();
             var first = new SessionProfile { UserId = 123, Username = "SmokeOne", Name = "First account" };
             var second = new SessionProfile { UserId = 456, Username = "SmokeTwo", Name = "Second account" };
             App.Settings.Prop.Theme = Enums.Theme.Dark;
@@ -45,12 +48,16 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     "A verified account must be saved before requesting its launch ticket.");
                 foreach (var card in window.Cards) window.AccountsList.SelectedItems.Add(card);
                 window.GroupName.Text = "Smoke group";
+                window.GroupChannel.Text = "Production";
                 window.AccountDestination.Text = "456";
                 window.SaveGroup_Click(window, new RoutedEventArgs());
                 Check(App.Settings.LastSaveSucceeded, "Group save failed.");
                 var group = App.Settings.Prop.LaunchGroups.Single();
                 Check(group.Accounts.SequenceEqual(new long[] { 123, 456 }), "Group ordering was not persisted.");
-                Check(group.Destination == "456", "Group destination was not persisted.");
+                Check(group.Destination == "456" && group.PlayerChannel == "production", "Group destination or channel was not persisted.");
+                var rejoinButton = new System.Windows.Controls.Button { DataContext = window.Cards.First() };
+                window.RejoinCard_Click(rejoinButton, new RoutedEventArgs());
+                Check(window.AccountStatus.Text.Contains("No public server has been recorded"), "An account with no history offered a rejoin.");
                 window.AccountsList.SelectedItems.Clear();
                 window.AccountsList.SelectedItem = window.Cards.Last();
                 window.Move(-1);
@@ -95,13 +102,66 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     encoder.Save(output);
                 }
 
-                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: session switches persisted and reloaded, verified account saved, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
+                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: mod pack imported, previewed and saved, session switches persisted and reloaded, Roblox build pinned and cleared, verified account saved, empty rejoin checked, group and channel saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
             }
             finally
             {
                 App.Settings.Prop.Theme = Enums.Theme.Dark;
                 window.Close();
             }
+        }
+
+        private static void VerifyRobloxVersionsPage()
+        {
+            const string buildId = "version-0000000000000001";
+            string directory = Path.Combine(Paths.Versions, buildId);
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, PlayerBuilds.ExecutableName), "");
+            PlayerBuilds.Save(directory, new DistributionState
+            {
+                VersionGuid = buildId,
+                KeepPlayerBuild = true,
+                PackageHashes = new() { ["RobloxApp.zip"] = "test" }
+            });
+
+            var page = new RobloxVersionsPage();
+            page.BuildChoice.Text = buildId;
+            page.PinButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            var persisted = new JsonManager<Models.Persistable.Settings>();
+            if (!persisted.Load() || persisted.Prop.PinnedPlayerBuild != buildId)
+                throw new InvalidOperationException("The Roblox version pin did not persist.");
+
+            page.AutomaticButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            if (!persisted.Load() || persisted.Prop.PinnedPlayerBuild is not null || persisted.Prop.PlayerChannel is not null)
+                throw new InvalidOperationException("Automatic did not clear the saved version pin.");
+        }
+
+        private static async Task VerifyModPackPageAsync(string directory)
+        {
+            string path = Path.Combine(directory, "smoke-mod.zip");
+            using (var archive = new ZipArchive(File.Create(path), ZipArchiveMode.Create))
+            {
+                using var source = Resource.GetStream("Cursor.From2006.ArrowCursor.png");
+                using var target = archive.CreateEntry(ModPackStore.SupportedTargets[0]).Open();
+                source.CopyTo(target);
+            }
+
+            var page = new ModsPage();
+            var host = new Window { Content = new Frame { Content = page } };
+            host.Show();
+            try
+            {
+                await page.ImportPackAsync(path);
+                if (page.PackImagePreview.Source is null || App.Settings.Prop.ModPacks.Single().Enabled)
+                    throw new InvalidOperationException("Imported pack did not display its cursor or was enabled by default.");
+
+                page.TogglePackButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                new MainWindowViewModel().SaveSettingsCommand.Execute(null);
+                var persisted = new JsonManager<Models.Persistable.Settings>();
+                if (!App.Settings.LastSaveSucceeded || !persisted.Load() || !persisted.Prop.ModPacks.Single().Enabled)
+                    throw new InvalidOperationException("The enabled mod pack did not survive a save and reload.");
+            }
+            finally { host.Close(); File.Delete(path); }
         }
 
         private static void VerifyFastFlagEditor()

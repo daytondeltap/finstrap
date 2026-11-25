@@ -29,7 +29,7 @@ using ICSharpCode.SharpZipLib.Zip;
 
 namespace Bloxstrap
 {
-    public class Bootstrapper
+    public partial class Bootstrapper
     {
         #region Properties
         private const int ProgressBarMaximum = 10000;
@@ -81,6 +81,7 @@ namespace Bloxstrap
         public string MutexNamePrefix { get; set; } = $"{App.ProjectName}-Bootstrapper";
         public bool QuitIfMutexExists { get; set; } = false;
         internal IReadOnlyList<Func<Task<RobloxAccountLaunch?>>>? AccountLaunches { get; init; }
+        internal string? PlayerSelectionError { get; private set; }
         internal int AccountPlayersStarted { get; private set; }
         internal Func<bool>? StopAccountQueue { get; init; }
         internal Action<long, bool>? AccountLaunchCompleted { get; init; }
@@ -256,10 +257,20 @@ namespace Bloxstrap
                 AppData.DistributionStateManager.Load();
             }
 
+            ReadPlayerSelection();
+            if (_noConnection && HasManagedPlayerSelection)
+                PlayerSelectionError = "Connect to Roblox to verify the selected build before launching.";
             await SafeGetLatestVersionInfo();
+            if (PlayerSelectionError is not null)
+            {
+                if (AccountLaunches is null)
+                    Frontend.ShowMessageBox(PlayerSelectionError, MessageBoxImage.Warning);
+                Dialog?.CloseBootstrapper();
+                return;
+            }
 
             bool multiPlayer = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
-            bool hasActivePlayer = (multiPlayer || AccountLaunches is not null) && RobloxPlayerProcesses.HasActivePlayer();
+            bool hasActivePlayer = !IsStudioLaunch && RobloxPlayerProcesses.HasActivePlayer();
             if (AccountLaunches is not null && !multiPlayer)
             {
                 if (AccountLaunches.Count > 1 || hasActivePlayer)
@@ -270,7 +281,7 @@ namespace Bloxstrap
                 RobloxPlayerProcesses.CloseVerifiedTrayProcesses();
             }
 
-            bool preserveSessions = multiPlayer && hasActivePlayer;
+            bool preserveSessions = hasActivePlayer;
             if (!preserveSessions)
                 CleanupVersionsFolder(); // cleanup after background updater
 
@@ -283,14 +294,27 @@ namespace Bloxstrap
                     if (preserveSessions)
                     {
                         App.Logger.WriteLine(LOG_IDENT, "Deferring the Roblox update while Player sessions are running.");
-                        if (!App.LaunchSettings.QuietFlag.Active)
-                            Frontend.ShowMessageBox("Roblox needs an update. Close your running Roblox clients before launching another session.", MessageBoxImage.Information);
+                        const string message = "Close your running Roblox clients before switching builds or updating Roblox.";
+                        if (AccountLaunches is not null)
+                            PlayerSelectionError = message;
+                        else if (!App.LaunchSettings.QuietFlag.Active)
+                            Frontend.ShowMessageBox(message, MessageBoxImage.Information);
+                        Dialog?.CloseBootstrapper();
                         return;
                     }
 
                     bool backgroundUpdaterMutexOpen = !App.LaunchSettings.BackgroundUpdaterFlag.Active && Utilities.DoesMutexExist(BackgroundUpdaterMutexName);
 
                     App.Logger.WriteLine(LOG_IDENT, $"Background updater running: {backgroundUpdaterMutexOpen}");
+
+                    if (backgroundUpdaterMutexOpen && HasManagedPlayerSelection)
+                    {
+                        PlayerSelectionError = "Roblox is updating in the background. Try the selected build again once it finishes.";
+                        if (AccountLaunches is null)
+                            Frontend.ShowMessageBox(PlayerSelectionError, MessageBoxImage.Information);
+                        Dialog?.CloseBootstrapper();
+                        return;
+                    }
 
                     if (backgroundUpdaterMutexOpen && _mustUpgrade)
                     {
@@ -301,10 +325,13 @@ namespace Bloxstrap
                    
                     if (!backgroundUpdaterMutexOpen)
                     {
-                        if (IsEligibleForBackgroundUpdate())
-                            StartBackgroundUpdater();
-                        else
-                            await UpgradeRoblox();
+                        if (!TryUseRetainedPlayerBuild())
+                        {
+                            if (IsEligibleForBackgroundUpdate())
+                                StartBackgroundUpdater();
+                            else
+                                await UpgradeRoblox();
+                        }
                     }
                 }
 
@@ -313,8 +340,40 @@ namespace Bloxstrap
 
                 // we require deployment details for applying modifications for a worst case scenario,
                 // where we'd need to restore files from a package that isn't present on disk and needs to be redownloaded
-                allModificationsApplied = await ApplyModifications();
+                if (!IsStudioLaunch && RobloxPlayerProcesses.HasActivePlayer())
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Deferring file changes while a Roblox Player is running.");
+                }
+                else
+                {
+                    var packs = !IsStudioLaunch && !App.LaunchSettings.BackgroundUpdaterFlag.Active
+                        ? new ModPackApplier(_latestVersionDirectory, Paths.Modifications,
+                            new ModPackStore(Path.Combine(Paths.Base, "ModPacks"))) : null;
+                    packs?.Recover();
+                    allModificationsApplied = await ApplyModifications();
+                    if (packs is not null && allModificationsApplied && !_cancelTokenSource.IsCancellationRequested &&
+                        !RobloxPlayerProcesses.HasActivePlayer())
+                    {
+                        try
+                        {
+                            var missing = packs.Apply(App.Settings.Prop.ModPacks);
+                            foreach (string target in missing)
+                                App.Logger.WriteLine(LOG_IDENT, $"Mod pack target is unavailable on this build: {target}");
+                            allModificationsApplied = missing.Count == 0;
+                        }
+                        catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) &&
+                            !packs.HasPendingRecovery)
+                        {
+                            App.Logger.WriteException(LOG_IDENT, ex);
+                            allModificationsApplied = false;
+                        }
+                    }
+                }
             }
+
+            if (!IsStudioLaunch && _noConnection && !preserveSessions && !RobloxPlayerProcesses.HasActivePlayer())
+                new ModPackApplier(Path.GetDirectoryName(AppData.ExecutablePath)!, Paths.Modifications,
+                    new ModPackStore(Path.Combine(Paths.Base, "ModPacks"))).Recover();
 
             // check registry entries for every launch, just in case the stock bootstrapper changes it back
 
@@ -428,7 +487,7 @@ namespace Bloxstrap
                 return;
             }
 
-            string? channel = GetCurrentChannelFromArgs();
+            string? channel = _managedPlayerChannel ?? GetCurrentChannelFromArgs();
 
             if (!String.IsNullOrEmpty(channel))
             {
@@ -471,7 +530,11 @@ namespace Bloxstrap
             string? newVersionGuid = null;
             Version? newVersion = null;
 
-            if (!App.LaunchSettings.VersionFlag.Active || string.IsNullOrEmpty(App.LaunchSettings.VersionFlag.Data))
+            if (_pinnedPlayerBuild is not null)
+            {
+                newVersionGuid = _pinnedPlayerBuild;
+            }
+            else if (!App.LaunchSettings.VersionFlag.Active || string.IsNullOrEmpty(App.LaunchSettings.VersionFlag.Data))
             {
                 ClientVersion clientVersion;
 
@@ -479,7 +542,7 @@ namespace Bloxstrap
                 {
                     clientVersion = await Deployment.GetInfo();
                 }
-                catch (InvalidChannelException ex)
+                catch (InvalidChannelException ex) when (_managedPlayerChannel is null)
                 {
                     App.Logger.WriteLine(LOG_IDENT, $"Resetting channel from {Deployment.Channel} because {ex.StatusCode}");
 
@@ -487,7 +550,8 @@ namespace Bloxstrap
                     clientVersion = await Deployment.GetInfo();
                 }
 
-                UpdateChannelRegistry();
+                if (_managedPlayerChannel is null)
+                    UpdateChannelRegistry();
 
                 newVersionGuid = clientVersion.VersionGuid;
                 newVersion = Utilities.ParseVersionSafe(clientVersion.Version);
@@ -546,7 +610,15 @@ namespace Bloxstrap
                 }
                 catch (Exception ex)
                 {
-                    HandleConnectionError(ex);
+                    if (HasManagedPlayerSelection)
+                    {
+                        App.Logger.WriteException(nameof(GetLatestVersionInfo), ex);
+                        PlayerSelectionError = _pinnedPlayerBuild is not null
+                            ? "Finstrap could not verify the pinned build. Use Roblox Versions to return to a current build."
+                            : "The selected Roblox channel is unavailable. Check its name or choose Automatic in Roblox Versions.";
+                    }
+                    else
+                        HandleConnectionError(ex);
                 }
             }
         }
@@ -560,6 +632,9 @@ namespace Bloxstrap
                 App.Logger.WriteLine(LOG_IDENT, "Not eligible: Is the background updater process");
                 return false;
             }
+
+            if (HasManagedPlayerSelection)
+                return false;
 
             if (!App.Settings.Prop.BackgroundUpdatesEnabled)
             {
@@ -911,12 +986,26 @@ namespace Bloxstrap
                 return;
             }
 
-            foreach (string dir in Directory.GetDirectories(Paths.Versions))
+            var directories = Directory.GetDirectories(Paths.Versions);
+            bool keptPreviousPlayerBuild = false;
+            foreach (string dir in directories.OrderByDescending(Directory.GetLastWriteTimeUtc))
             {
                 string dirName = Path.GetFileName(dir);
 
                 if (dirName != App.PlayerState.Prop.VersionGuid && dirName != App.StudioState.Prop.VersionGuid)
                 {
+                    if (PlayerBuilds.Read(dir) is { } savedBuild)
+                    {
+                        if (savedBuild.KeepPlayerBuild || dirName == App.Settings.Prop.PinnedPlayerBuild)
+                            continue;
+
+                        if (!keptPreviousPlayerBuild)
+                        {
+                            keptPreviousPlayerBuild = true;
+                            continue;
+                        }
+                    }
+
                     // TODO: this is too expensive
                     //Filesystem.AssertReadOnlyDirectory(dir);
 
@@ -938,11 +1027,11 @@ namespace Bloxstrap
             }
         }
 
-        private void MigrateCompatibilityFlags()
+        private void MigrateCompatibilityFlags(string previousVersion)
         {
             const string LOG_IDENT = "Bootstrapper::MigrateCompatibilityFlags";
 
-            string oldClientLocation = Path.Combine(Paths.Versions, AppData.DistributionState.VersionGuid, AppData.ExecutableName);
+            string oldClientLocation = Path.Combine(Paths.Versions, previousVersion, AppData.ExecutableName);
             string newClientLocation = Path.Combine(_latestVersionDirectory, AppData.ExecutableName);
 
             // move old compatibility flags for the old location
@@ -1184,16 +1273,20 @@ namespace Bloxstrap
 
             // finishing and cleanup
 
-            MigrateCompatibilityFlags();
+            if (!File.Exists(Path.Combine(_latestVersionDirectory, AppData.ExecutableName)))
+                throw new IOException("The Roblox executable was missing after installation.");
 
-            AppData.DistributionState.VersionGuid = _latestVersionGuid;
-
-            AppData.DistributionState.PackageHashes.Clear();
-
-            foreach (var package in _versionPackageManifest)
-                AppData.DistributionState.PackageHashes.Add(package.Name, package.Signature);
-
-            CleanupVersionsFolder();
+            var previous = AppData.DistributionState;
+            bool sameBuild = previous.VersionGuid == _latestVersionGuid;
+            RetainCurrentPlayerBuild();
+            ActivateDistribution(new DistributionState
+            {
+                VersionGuid = _latestVersionGuid,
+                PackageHashes = _versionPackageManifest.ToDictionary(package => package.Name, package => package.Signature),
+                ModManifest = sameBuild ? previous.ModManifest : new(),
+                KeepPlayerBuild = sameBuild && previous.KeepPlayerBuild,
+                Size = (int)(_versionPackageManifest.Sum(package => (long)package.Size + package.PackedSize) / 1024)
+            });
 
             var allPackageHashes = new List<string>();
 
@@ -1223,15 +1316,11 @@ namespace Bloxstrap
 
             App.Logger.WriteLine(LOG_IDENT, "Registering approximate program size...");
 
-            int distributionSize = _versionPackageManifest.Sum(x => x.Size + x.PackedSize) / 1024;
-
-            AppData.DistributionState.Size = distributionSize;
-
-            int totalSize = App.PlayerState.Prop.Size + App.PlayerState.Prop.Size;
+            long totalSize = (long)App.PlayerState.Prop.Size + App.StudioState.Prop.Size;
 
             using (var uninstallKey = Registry.CurrentUser.CreateSubKey(App.UninstallKey))
             {
-                uninstallKey.SetValueSafe("EstimatedSize", totalSize);
+                uninstallKey.SetValueSafe("EstimatedSize", (int)Math.Min(totalSize, int.MaxValue));
             }
 
             App.Logger.WriteLine(LOG_IDENT, $"Registered as {totalSize} KB");
@@ -1239,8 +1328,7 @@ namespace Bloxstrap
             App.State.Prop.ForceReinstall = false;
 
             App.State.Save();
-            AppData.DistributionStateManager.Save();
-
+            CleanupVersionsFolder();
             _isInstalling = false;
         }
 
@@ -1495,7 +1583,7 @@ namespace Bloxstrap
             return success;
         }
 
-        private async Task DownloadPackage(Package package)
+        private async Task DownloadPackage(Package package, bool verifiedStaging = false)
         {
             string LOG_IDENT = $"Bootstrapper::DownloadPackage.{package.Name}";
             
@@ -1528,7 +1616,7 @@ namespace Bloxstrap
                     return;
                 }
             }
-            else if (File.Exists(robloxPackageLocation))
+            else if (!verifiedStaging && File.Exists(robloxPackageLocation))
             {
                 // let's cheat! if the stock bootstrapper already previously downloaded the file,
                 // then we can just copy the one from there
@@ -1560,7 +1648,9 @@ namespace Bloxstrap
 
                 try
                 {
-                    var response = await App.HttpClient.GetAsync(packageUrl, HttpCompletionOption.ResponseHeadersRead, _cancelTokenSource.Token);
+                    using var response = await App.HttpClient.GetAsync(packageUrl, HttpCompletionOption.ResponseHeadersRead, _cancelTokenSource.Token);
+                    if (verifiedStaging)
+                        response.EnsureSuccessStatusCode();
                     await using var stream = await response.Content.ReadAsStreamAsync(_cancelTokenSource.Token);
                     await using var fileStream = new FileStream(package.DownloadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Delete);
 
@@ -1599,7 +1689,14 @@ namespace Bloxstrap
                     App.Logger.WriteLine(LOG_IDENT, $"An exception occurred after downloading {totalBytesRead} bytes. ({i}/{maxTries})");
                     App.Logger.WriteException(LOG_IDENT, ex);
 
-                    if (ex.GetType() == typeof(ChecksumFailedException))
+                    if (verifiedStaging)
+                    {
+                        File.Delete(package.DownloadPath);
+                        if (ex is ChecksumFailedException or HttpRequestException { StatusCode: HttpStatusCode.NotFound or HttpStatusCode.Forbidden } ||
+                            i >= maxTries)
+                            throw;
+                    }
+                    else if (ex.GetType() == typeof(ChecksumFailedException))
                     {
                         App.SendStat("packageDownloadState", "httpFail");
 
@@ -1624,7 +1721,7 @@ namespace Bloxstrap
                     // attempt download over HTTP
                     // this isn't actually that unsafe - signatures were fetched earlier over HTTPS
                     // so we've already established that our signatures are legit, and that there's very likely no MITM anyway
-                    if (ex.GetType() == typeof(IOException) && !packageUrl.StartsWith("http://"))
+                    if (!verifiedStaging && ex.GetType() == typeof(IOException) && !packageUrl.StartsWith("http://"))
                     {
                         App.Logger.WriteLine(LOG_IDENT, "Retrying download over HTTP...");
                         packageUrl = packageUrl.Replace("https://", "http://");
