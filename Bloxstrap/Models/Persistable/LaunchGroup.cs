@@ -7,6 +7,7 @@ namespace Bloxstrap.Models.Persistable
         public string Name { get; set; } = "Launch group";
         public List<long> Accounts { get; set; } = new();
         public string Destination { get; set; } = "";
+        public string? PlayerChannel { get; set; }
         public Dictionary<long, SavedWindowLayout> Layout { get; set; } = new();
         public override string ToString() => Name;
     }

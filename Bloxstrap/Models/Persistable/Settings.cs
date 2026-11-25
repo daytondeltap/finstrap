@@ -38,6 +38,8 @@ namespace Bloxstrap.Models.Persistable
         public List<ModPackSelection> ModPacks { get; set; } = new();
 
         public string? PreferredServerCountry { get; set; }
+        public string? PlayerChannel { get; set; }
+        public string? PinnedPlayerBuild { get; set; }
 
         public List<LaunchGroup> LaunchGroups { get; set; } = new();
 

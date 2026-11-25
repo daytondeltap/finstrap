@@ -1,0 +1,41 @@
+<ui:UiPage x:Class="Bloxstrap.UI.Elements.Settings.Pages.RobloxVersionsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Roblox Versions" Scrollable="True">
+    <StackPanel x:Name="VersionControls" Margin="0,0,14,14">
+        <TextBlock Text="Roblox Versions" FontSize="24" FontWeight="SemiBold"/>
+        <TextBlock x:Name="InstalledBuild" Margin="0,8,0,12" TextWrapping="Wrap"/>
+
+        <TextBlock Text="Default channel" Margin="0,0,0,4"/>
+        <ui:TextBox x:Name="ChannelName" PlaceholderText="Automatic (Roblox selects the channel)"
+                    AutomationProperties.Name="Default Roblox channel"/>
+        <WrapPanel Margin="0,8,0,16">
+            <ui:Button Content="Use channel" Click="SaveChannel_Click" Margin="0,0,6,6"/>
+            <ui:Button x:Name="AutomaticButton" Content="Use Automatic" Click="Automatic_Click" Margin="0,0,6,6"/>
+            <ui:Button Content="Check for update" Click="CheckChannel_Click" Margin="0,0,6,6"/>
+            <ui:Button Content="Download channel build" Click="DownloadChannel_Click" Margin="0,0,6,6"/>
+        </WrapPanel>
+
+        <TextBlock Text="Build ID" Margin="0,0,0,4"/>
+        <ComboBox x:Name="BuildChoice" IsEditable="True" TextSearch.TextPath="Id" AutomationProperties.Name="Roblox build ID">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Version}" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding Id}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+        <WrapPanel Margin="0,8,0,4">
+            <ui:Button Content="Show older builds" Click="History_Click" Margin="0,0,6,6"/>
+            <ui:Button Content="Download build" Click="DownloadBuild_Click" Margin="0,0,6,6"/>
+            <ui:Button x:Name="PinButton" Content="Pin downloaded build" Click="Pin_Click" Margin="0,0,6,6"/>
+            <ui:Button Content="Remove downloaded build" Click="Remove_Click" Margin="0,0,6,6"/>
+        </WrapPanel>
+        <TextBlock Text="Roblox may require a current build for online play. Use your channel or Automatic to clear a pin."
+                   TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <TextBlock x:Name="VersionStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+    </StackPanel>
+</ui:UiPage>

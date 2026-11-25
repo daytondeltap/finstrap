@@ -95,6 +95,21 @@ namespace Bloxstrap
                 App.Settings.Prop.ForegroundAntiIdle || App.Settings.Prop.SessionProfiles.Count > 0)
             {
                 ActivityWatcher = new(_watcherData.LogFile);
+                ActivityWatcher.OnGameJoin += (_, _) =>
+                {
+                    var activity = ActivityWatcher.Data;
+                    if (activity.ServerType != ServerType.Public || Profile is not { } profile)
+                        return;
+
+                    try
+                    {
+                        LastPublicServer.Record(Paths.LastPublicServers, profile.UserId, activity.PlaceId, activity.JobId);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        App.Logger.WriteLine(LOG_IDENT, "Could not save the account's last server.");
+                    }
+                };
                 if (_watcherData.ExpectedServerJobId is Guid expectedJob)
                 {
                     void CheckFirstJoin(object? sender, EventArgs args)

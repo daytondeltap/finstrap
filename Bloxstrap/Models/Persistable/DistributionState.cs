@@ -9,5 +9,8 @@
         public int Size { get; set; }
 
         public List<string> ModManifest { get; set; } = new();
+
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool KeepPlayerBuild { get; set; }
     }
 }
