@@ -33,6 +33,31 @@ namespace Bloxstrap.Integrations
             return AccountLaunchTarget.FromPrivateShare(await response.Content.ReadAsStringAsync(token));
         }
 
+        public async Task<RobloxServerMetadata?> GetServerMetadataAsync(long placeId, Guid jobId, CancellationToken token)
+        {
+            using var response = await PostAsync("https://gamejoin.roblox.com/v1/join-game-instance",
+                JsonSerializer.SerializeToUtf8Bytes(new { placeId, gameId = jobId, isTeleport = false, gameJoinAttemptId = Guid.NewGuid() }), token);
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict ||
+                (response.StatusCode == HttpStatusCode.Forbidden && !response.Headers.Contains("x-csrf-token")))
+                return null;
+            response.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            var root = body.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("joinScript", out var script) ||
+                script.ValueKind != JsonValueKind.Object)
+                return null;
+            if (script.TryGetProperty("GameId", out var game) &&
+                (game.ValueKind != JsonValueKind.String || !Guid.TryParse(game.GetString(), out Guid actual) || actual != jobId))
+                return null;
+            if (script.TryGetProperty("PlaceId", out var place) &&
+                (!long.TryParse(place.ToString(), out long actualPlace) || actualPlace != placeId))
+                return null;
+
+            int? datacenterId = script.TryGetProperty("DataCenterId", out var datacenter) &&
+                int.TryParse(datacenter.ToString(), out int id) && id > 0 ? id : null;
+            return new(datacenterId, ServerRegionLookup.ReadAddresses(script));
+        }
+
         public async Task<string> GetTicketAsync(CancellationToken token)
         {
             // Roblox's web launcher sends the signed client assertion as the ticket request body.

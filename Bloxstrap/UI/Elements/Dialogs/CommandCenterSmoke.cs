@@ -32,6 +32,12 @@ namespace Bloxstrap.UI.Elements.Dialogs
             {
                 void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); }
                 Check(window.Cards.Count() == 2, "Account cards did not load.");
+                window.ServerCountry.SelectedValue = "SG";
+                Check(window.SelectedServerCountry == "SG" && App.Settings.LastSaveSucceeded, "Server country selection was not saved.");
+                var persisted = new JsonManager<Bloxstrap.Models.Persistable.Settings>();
+                Check(persisted.Load() && persisted.Prop.PreferredServerCountry == "SG", "Server country was not restored from settings.");
+                window.ServerCountry.SelectedValue = "";
+                Check(window.SelectedServerCountry is null && App.Settings.LastSaveSucceeded, "Any region did not clear the saved filter.");
                 string profileKey = Guid.NewGuid().ToString("N");
                 window.SaveVerifiedAccount(first.UserId, first.Username, profileKey, new());
                 var savedSettings = new JsonManager<Models.Persistable.Settings>();

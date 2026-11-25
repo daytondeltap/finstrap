@@ -78,4 +78,11 @@ jobs:
           Copy-Item smoke/dashboard.png dashboard-smoke.png
           $files = @('Finstrap.exe','Finstrap-Windows-x64.zip','Finstrap-Licenses.zip','dashboard-smoke.png')
           $files | ForEach-Object { $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(); "$hash  $_" } | Set-Content SHA256SUMS.txt
-          gh release create $env:GITHUB_REF_NAME @files SHA256SUMS.txt --verify-tag --title "Finstrap $env:GITHUB_REF_NAME" --notes-file docs/release-notes/notes-v2.12.2.md --latest
+          $notes = "docs/release-notes/notes-$env:GITHUB_REF_NAME.md"
+          if ($env:GITHUB_REF_NAME -match '^v[0-9]+\.[0-9]+\.[0-9]+-') {
+            $releaseOptions = @('--prerelease', '--latest=false')
+          } else {
+            $releaseOptions = @('--latest')
+            if (-not (Test-Path $notes)) { $notes = 'docs/release-notes/notes-v2.12.2.md' }
+          }
+          gh release create $env:GITHUB_REF_NAME @files SHA256SUMS.txt --verify-tag --title "Finstrap $env:GITHUB_REF_NAME" --notes-file $notes @releaseOptions

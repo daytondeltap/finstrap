@@ -73,7 +73,11 @@
        <WrapPanel><ui:Button Content="↑" Click="MoveUp_Click"/><ui:Button Content="↓" Click="MoveDown_Click" Margin="8,0"/></WrapPanel>
        <TextBlock Text="Destination" Margin="0,16,0,4"/>
        <ui:TextBox x:Name="AccountDestination" PlaceholderText="Place ID, server link, or friend"/>
-       <TextBlock Text="Blank uses each account’s saved place. 0 opens Roblox Home." TextWrapping="Wrap" Margin="0,4,0,12"/>
+       <TextBlock Text="Blank uses saved places. 0 opens Roblox Home with the selected country filter." TextWrapping="Wrap" Margin="0,4,0,12"/>
+       <TextBlock Text="Server country" Margin="0,0,0,4"/>
+       <ComboBox x:Name="ServerCountry" DisplayMemberPath="Name" SelectedValuePath="Code"
+                 SelectionChanged="ServerCountry_Changed" AutomationProperties.Name="Server country"/>
+       <ui:Button Content="Check server location" Click="CheckServerLocation_Click" Margin="0,8,0,12"/>
        <ui:Button x:Name="LaunchSelected" Appearance="Primary" Content="Preview and launch selected" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
        <ui:Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
       </StackPanel>

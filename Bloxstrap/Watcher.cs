@@ -95,6 +95,18 @@ namespace Bloxstrap
                 App.Settings.Prop.ForegroundAntiIdle || App.Settings.Prop.SessionProfiles.Count > 0)
             {
                 ActivityWatcher = new(_watcherData.LogFile);
+                if (_watcherData.ExpectedServerJobId is Guid expectedJob)
+                {
+                    void CheckFirstJoin(object? sender, EventArgs args)
+                    {
+                        ActivityWatcher.OnGameJoin -= CheckFirstJoin;
+                        bool matched = Guid.TryParse(ActivityWatcher.Data.JobId, out Guid joined) && expectedJob == joined;
+                        App.Logger.WriteLine("RegionMatch", matched
+                            ? $"Joined selected server (estimated country {_watcherData.ExpectedServerCountry})."
+                            : $"Roblox joined a different server than selected (expected country {_watcherData.ExpectedServerCountry}).");
+                    }
+                    ActivityWatcher.OnGameJoin += CheckFirstJoin;
+                }
 
                 if (App.Settings.Prop.UseDisableAppPatch && !_watcherData.KeepDesktopApp)
                 {

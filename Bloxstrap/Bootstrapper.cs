@@ -85,6 +85,7 @@ namespace Bloxstrap
         internal Func<bool>? StopAccountQueue { get; init; }
         internal Action<long, bool>? AccountLaunchCompleted { get; init; }
         private long _accountUserId;
+        private ServerLocation? _selectedServer;
         private bool _keepDesktopApp;
         #endregion
 
@@ -356,6 +357,7 @@ namespace Bloxstrap
                             continue;
                         _accountUserId = account.UserId;
                         _keepDesktopApp = account.OpenDesktopHome;
+                        _selectedServer = account.SelectedServer;
                         _launchCommandLine = account.Arguments;
                         try
                         {
@@ -703,6 +705,8 @@ namespace Bloxstrap
                 ProcessStartTimeUtc = startTime,
                 AccountUserId = _accountUserId,
                 KeepDesktopApp = _keepDesktopApp,
+                ExpectedServerJobId = _selectedServer?.JobId,
+                ExpectedServerCountry = _selectedServer?.Country,
                 MultiInstance = multiInstance
             };
             using (var player = IsStudioLaunch ? null : PlayerLifetime.Open(watcherData))

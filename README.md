@@ -15,6 +15,16 @@ The launch menu includes account cards, verified session status, and named launc
 
 The first settings write preserves the existing file as `Settings.json.pre-command-center.bak`. Concurrent settings changes are rejected instead of overwriting another window's changes.
 
+## Server location and country filter
+
+Choose a **Server country** in the launch menu. Finstrap searches public servers with open slots across multiple pages and uses Roblox connection metadata and [RoSeal’s datacenter map](https://github.com/RoSeal-Extension/Data) to estimate the country. It targets a specific matching instance. If the bounded search cannot find a match, the filtered launch stops. **Any region** restores standard matchmaking.
+
+**Check server location** estimates location without opening Roblox. When you check an exact public server link, Finstrap looks up that specific instance. With **Any region**, a public connection IP can be sent to IPinfo to estimate an otherwise unknown location. Generic IP estimates do not qualify a server for filtered Play. Your Roblox session is used only with Roblox endpoints.
+
+Enter **0** with a country selected to open a filtered Roblox Home window in Finstrap for that account. Browse games there and press Play or use **Play this page**. The window keeps the selected country for the next game. Close your current Roblox game before launching another with the same account. Native Roblox Home and in-game teleports make their own matchmaking decisions.
+
+Supported browser Play links handled by Finstrap open the launch menu with the game filled in. Private invites and joining friends are available with **Any region**. Finstrap logs whether Roblox’s first observed join used the selected instance. An instance match confirms the job ID. It does not independently confirm the physical datacenter.
+
 ## Roblox sessions
 
 - **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility. If an update is required, Finstrap waits for existing clients to close before updating on the next launch.

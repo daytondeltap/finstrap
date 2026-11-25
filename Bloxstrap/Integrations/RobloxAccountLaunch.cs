@@ -7,8 +7,9 @@ namespace Bloxstrap.Integrations
         public string ProfileKey { get; }
         public string Arguments { get; }
         public bool OpenDesktopHome { get; }
+        public ServerLocation? SelectedServer { get; }
 
-        public RobloxAccountLaunch(long userId, string username, string profileKey, string ticket, AccountLaunchTarget target)
+        public RobloxAccountLaunch(long userId, string username, string profileKey, string ticket, AccountLaunchTarget target, ServerLocation? selectedServer = null)
         {
             if (userId <= 0 || ticket.Length is 0 or > 8192 || ticket.Any(ch => ch < '!' || ch > '~'))
                 throw new InvalidDataException("Roblox returned an invalid desktop launch ticket.");
@@ -16,6 +17,7 @@ namespace Bloxstrap.Integrations
             UserId = userId;
             Username = username;
             ProfileKey = profileKey;
+            SelectedServer = selectedServer;
             string? launcher = target.GetPlaceLauncherUrl();
             OpenDesktopHome = launcher is null;
             string mode = OpenDesktopHome ? "app" : "play";
