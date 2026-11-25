@@ -6,8 +6,6 @@ using System.Collections.ObjectModel;
 using Wpf.Ui.Mvvm.Contracts;
 
 using Bloxstrap.UI.Elements.Dialogs;
-using Newtonsoft.Json.Linq;
-using System.Xml.Linq;
 
 namespace Bloxstrap.UI.Elements.Settings.Pages
 {
@@ -16,20 +14,9 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
     /// </summary>
     public partial class FastFlagEditorPage
     {
-        // believe me when i say there is absolutely zero point to using mvvm for this
-        // using a datagrid is a codebehind thing only and thats it theres literally no way around it
-
         private readonly ObservableCollection<FastFlag> _fastFlagList = new();
-        private readonly List<string> _validPrefixes = new()
-        {
-            "FFlag", "DFFlag", "SFFlag", "FInt", "DFInt", "FString", "DFString", "FLog", "DFLog"
-        };
-
-        // values must match the entire string to avoid cases where half the string
-        // matches but the filter would still be invalid
-        private readonly Regex _boolFilterPattern = new("^(?:true|false)(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
-        private readonly Regex _intFilterPattern = new("^([\\d]{1,})?(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
-        private readonly Regex _stringFilterPattern = new("^[^;]*(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
+        private bool IsStudio => TargetSelector?.SelectedIndex == 1;
+        private FastFlagManager Flags => IsStudio ? App.StudioFastFlags : App.FastFlags;
 
         private bool _showPresets = false;
         private string _searchFilter = "";
@@ -41,32 +28,28 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
 
         private void ReloadList()
         {
+            if (DataGrid is null)
+                return;
+
             var selectedEntry = DataGrid.SelectedItem as FastFlag;
 
             _fastFlagList.Clear();
 
             var presetFlags = FastFlagManager.PresetFlags.Values;
 
-            foreach (var pair in App.FastFlags.Prop.OrderBy(x => x.Key))
+            foreach (var pair in Flags.Prop.OrderBy(x => x.Key))
             {
-                if (!_showPresets && presetFlags.Contains(pair.Key))
+                if (!IsStudio && !_showPresets && presetFlags.Contains(pair.Key))
                     continue;
 
-                if (!pair.Key.ToLower().Contains(_searchFilter.ToLower()))
+                if (!pair.Key.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 var entry = new FastFlag
                 {
-                    // Enabled = true,
                     Name = pair.Key,
-                    Value = pair.Value.ToString()!
+                    Value = pair.Value?.ToString() ?? ""
                 };
-
-                /* if (entry.Name.StartsWith("Disable"))
-                {
-                    entry.Enabled = false;
-                    entry.Name = entry.Name[7..];
-                } */
 
                 _fastFlagList.Add(entry);
             }
@@ -98,6 +81,7 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
         private void ShowAddDialog()
         {
             var dialog = new AddFastFlagDialog();
+            dialog.Owner = Window.GetWindow(this);
             dialog.ShowDialog();
 
             if (dialog.Result != MessageBoxResult.OK)
@@ -113,17 +97,13 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
         {
             FastFlag? entry;
 
-            if (App.FastFlags.GetValue(name) is null)
+            if (Flags.GetValue(name) is null)
             {
                 if (!ValidateFlagEntry(name, value))
-                {
-                    ShowAddDialog();
                     return;
-                }
 
                 entry = new FastFlag
                 {
-                    // Enabled = true,
                     Name = name,
                     Value = value
                 };
@@ -133,7 +113,7 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
 
                 _fastFlagList.Add(entry);
 
-                App.FastFlags.SetValue(entry.Name, entry.Value);
+                Flags.SetValue(entry.Name, entry.Value);
             }
             else
             {
@@ -141,7 +121,7 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
 
                 bool refresh = false;
 
-                if (!_showPresets && FastFlagManager.PresetFlags.Values.Contains(name))
+                if (!IsStudio && !_showPresets && FastFlagManager.PresetFlags.Values.Contains(name))
                 {
                     TogglePresetsButton.IsChecked = true;
                     _showPresets = true;
@@ -161,145 +141,70 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
             }
 
             DataGrid.SelectedItem = entry;
-            DataGrid.ScrollIntoView(entry);
+            if (entry is not null)
+                DataGrid.ScrollIntoView(entry);
         }
 
         private void ImportJSON(string json)
         {
-            Dictionary<string, object>? list = null;
-
-            json = json.Trim();
-
-            // autocorrect where possible
-            if (!json.StartsWith('{'))
-                json = '{' + json;
-
-            if (!json.EndsWith('}'))
-            {
-                int lastIndex = json.LastIndexOf('}');
-
-                if (lastIndex == -1)
-                    json += '}';
-                else
-                    json = json.Substring(0, lastIndex+1);
-            }
-
+            var rows = new List<FastFlagImportRow>();
             try
             {
-                var options = new JsonSerializerOptions
+                using var document = JsonDocument.Parse(json, new JsonDocumentOptions
                 {
-                    ReadCommentHandling = JsonCommentHandling.Skip,
+                    CommentHandling = JsonCommentHandling.Skip,
                     AllowTrailingCommas = true
-                };
+                });
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    throw new JsonException("Expected a JSON object with flag names as keys.");
 
-                list = JsonSerializer.Deserialize<Dictionary<string, object>>(json, options);
-
-                if (list is null)
-                    throw new Exception("JSON deserialization returned null");
+                var entries = document.RootElement.EnumerateObject().ToArray();
+                foreach (var group in entries.GroupBy(entry => entry.Name, StringComparer.Ordinal))
+                {
+                    var entry = group.First();
+                    var value = entry.Value.ToString();
+                    bool scalar = entry.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False;
+                    string status = group.Count() > 1 ? "Duplicate key"
+                        : !scalar || FastFlagManager.GetValidationError(entry.Name, value) is not null ? "Invalid name or value"
+                        : !IsStudio && !FastFlagManager.PlayerAllowlist.Contains(entry.Name) ? "Outside Player allowlist"
+                        : Flags.GetValue(entry.Name) is null ? "New"
+                        : Flags.GetValue(entry.Name) == value ? "Unchanged"
+                        : "Replace existing value";
+                    rows.Add(new FastFlagImportRow(entry.Name, value, status));
+                }
             }
-            catch (Exception ex)
+            catch (JsonException ex)
             {
-                Frontend.ShowMessageBox(                    
-                    String.Format(Strings.Menu_FastFlagEditor_InvalidJSON, ex.Message),
-                    MessageBoxImage.Error
-                );
-
-                ShowAddDialog();
-
+                Frontend.ShowMessageBox(string.Format(Strings.Menu_FastFlagEditor_InvalidJSON, ex.Message), MessageBoxImage.Error);
                 return;
             }
 
-            if (list.Count > 16)
-            {
-                var result = Frontend.ShowMessageBox(
-                    Strings.Menu_FastFlagEditor_LargeConfig, 
-                    MessageBoxImage.Warning,
-                    MessageBoxButton.YesNo
-                );
+            var preview = new FastFlagImportDialog(rows, IsStudio ? "Studio" : "Player") { Owner = Window.GetWindow(this) };
+            if (preview.ShowDialog() != true)
+                return;
 
-                if (result != MessageBoxResult.Yes)
-                    return;
-            }
-
-            var conflictingFlags = App.FastFlags.Prop.Where(x => list.ContainsKey(x.Key)).Select(x => x.Key);
-            bool overwriteConflicting = false;
-
-            if (conflictingFlags.Any())
-            {
-                int count = conflictingFlags.Count();
-
-                string message = String.Format(
-                    Strings.Menu_FastFlagEditor_ConflictingImport,
-                    count,
-                    String.Join(", ", conflictingFlags.Take(25))
-                );
-
-                if (count > 25)
-                    message += "...";
-
-                var result = Frontend.ShowMessageBox(message, MessageBoxImage.Question, MessageBoxButton.YesNo);
-
-                overwriteConflicting = result == MessageBoxResult.Yes;
-            }
-
-            foreach (var pair in list)
-            {
-                if (App.FastFlags.Prop.ContainsKey(pair.Key) && !overwriteConflicting)
-                    continue;
-
-                if (pair.Value is null)
-                    continue;
-
-                var val = pair.Value.ToString();
-
-                if (val is null)
-                    continue;
-
-                if (!ValidateFlagEntry(pair.Key, val))
-                    continue;
-
-                App.FastFlags.SetValue(pair.Key, pair.Value);
-            }
+            foreach (var row in rows.Where(row => row.CanApply))
+                Flags.SetValue(row.Name, row.Value);
 
             ClearSearch();
         }
 
         private bool ValidateFlagEntry(string name, string value)
         {
-            string lowerValue = value.ToLowerInvariant();
-            string errorMessage = "";
+            string? error = FastFlagManager.GetValidationError(name, value);
+            if (error is not null)
+            {
+                Frontend.ShowMessageBox(string.Format(error, name), MessageBoxImage.Error);
+                return false;
+            }
 
-            if (!_validPrefixes.Any(name.StartsWith))
-                errorMessage = Strings.Menu_FastFlagEditor_InvalidPrefix;
-            else if (!name.All(x => char.IsLetterOrDigit(x) || x == '_'))
-                errorMessage = Strings.Menu_FastFlagEditor_InvalidCharacter;
-            
-            if (name.EndsWith("_PlaceFilter") || name.EndsWith("_DataCenterFilter"))
-                errorMessage = !ValidateFilter(name, value) ? Strings.Menu_FastFlagEditor_InvalidPlaceFilter : ""; 
-            else if ((name.StartsWith("FInt") || name.StartsWith("DFInt")) && !Int32.TryParse(value, out _))
-                errorMessage = Strings.Menu_FastFlagEditor_InvalidNumberValue;
-            else if ((name.StartsWith("FFlag") || name.StartsWith("DFFlag")) && lowerValue != "true" && lowerValue != "false")
-                errorMessage = Strings.Menu_FastFlagEditor_InvalidBoolValue;
-            
-            if (!String.IsNullOrEmpty(errorMessage))
-            { 
-                Frontend.ShowMessageBox(String.Format(errorMessage, name), MessageBoxImage.Error);
+            if (!IsStudio && !FastFlagManager.PlayerAllowlist.Contains(name))
+            {
+                Frontend.ShowMessageBox("This flag is outside the published Player allowlist. Select Studio to edit its Studio configuration.", MessageBoxImage.Warning);
                 return false;
             }
 
             return true;
-        }
-
-        private bool ValidateFilter(string name, string value)
-        {
-            if(name.StartsWith("FFlag") || name.StartsWith("DFFlag"))
-                return _boolFilterPattern.IsMatch(value);
-            if (name.StartsWith("FInt") || name.StartsWith("DFInt"))
-                return _intFilterPattern.IsMatch(value);
-            if (name.StartsWith("FString") || name.StartsWith("DFString") || name.StartsWith("FLog") || name.StartsWith("DFLog"))
-                return _stringFilterPattern.IsMatch(value);
-            
-            return false;
         }
 
         // refresh list on page load to synchronize with preset page
@@ -307,22 +212,25 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
 
         private void DataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
+            if (e.EditAction != DataGridEditAction.Commit)
+                return;
+
             if (e.Row.DataContext is not FastFlag entry)
                 return;
 
             if (e.EditingElement is not TextBox textbox)
                 return;
 
-            switch (e.Column.Header)
+            switch (((DataGridTextColumn)e.Column).SortMemberPath)
             {
-                case "Name":
+                case nameof(FastFlag.Name):
                     string oldName = entry.Name;
                     string newName = textbox.Text;
 
                     if (newName == oldName)
                         return;
 
-                    if (App.FastFlags.GetValue(newName) is not null)
+                    if (Flags.GetValue(newName) is not null)
                     {
                         Frontend.ShowMessageBox(Strings.Menu_FastFlagEditor_AlreadyExists, MessageBoxImage.Information);
                         e.Cancel = true;
@@ -330,17 +238,23 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
                         return;
                     }
 
-                    App.FastFlags.SetValue(oldName, null);
-                    App.FastFlags.SetValue(newName, entry.Value);
+                    if (!ValidateFlagEntry(newName, entry.Value))
+                    {
+                        e.Cancel = true;
+                        textbox.Text = oldName;
+                        return;
+                    }
 
-                    if (!newName.Contains(_searchFilter))
-                        ClearSearch();
+                    Flags.SetValue(oldName, null);
+                    Flags.SetValue(newName, entry.Value);
+
+                    Dispatcher.BeginInvoke(new Action(ReloadList));
 
                     entry.Name = newName;
 
                     break;
 
-                case "Value":
+                case nameof(FastFlag.Value):
                     string oldValue = entry.Value;
                     string newValue = textbox.Text;
 
@@ -351,10 +265,19 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
                         return;
                     }
 
-                    App.FastFlags.SetValue(entry.Name, newValue);
+                    Flags.SetValue(entry.Name, newValue);
 
                     break;
             }
+        }
+
+        private void TargetSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (DataGrid is null)
+                return;
+
+            DataGrid.CancelEdit(DataGridEditingUnit.Row);
+            ReloadList();
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -375,7 +298,7 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
             foreach (FastFlag entry in tempList)
             {
                 _fastFlagList.Remove(entry);
-                App.FastFlags.SetValue(entry.Name, null);
+                Flags.SetValue(entry.Name, null);
             }
         }
 
@@ -388,11 +311,32 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
             ReloadList();
         }
 
+        private void CopyJSONButton_Click(object sender, RoutedEventArgs e)
+        {
+            Clipboard.SetText(ExportJson());
+            Frontend.ShowMessageBox(Strings.Menu_FastFlagEditor_JsonCopiedToClipboard, MessageBoxImage.Information);
+        }
+
+        private string ExportJson() => JsonSerializer.Serialize(Flags.Prop, new JsonSerializerOptions { WriteIndented = true });
+
         private void ExportJSONButton_Click(object sender, RoutedEventArgs e)
         {
-            string json = JsonSerializer.Serialize(App.FastFlags.Prop, new JsonSerializerOptions { WriteIndented = true });
-            Clipboard.SetDataObject(json);
-            Frontend.ShowMessageBox(Strings.Menu_FastFlagEditor_JsonCopiedToClipboard, MessageBoxImage.Information);
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json",
+                FileName = IsStudio ? "StudioClientAppSettings.json" : "ClientAppSettings.json"
+            };
+            if (dialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                File.WriteAllText(dialog.FileName, ExportJson());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Frontend.ShowMessageBox(ex.Message, MessageBoxImage.Error);
+            }
         }
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)

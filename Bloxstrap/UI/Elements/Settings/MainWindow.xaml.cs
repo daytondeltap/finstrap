@@ -81,7 +81,7 @@ namespace Bloxstrap.UI.Elements.Settings
 
         private void WpfUiWindow_Closing(object sender, CancelEventArgs e)
         {
-            if (App.Settings.HasUnsavedChanges || App.FastFlags.Changed || App.PendingSettingTasks.Any())
+            if (App.Settings.HasUnsavedChanges || App.FastFlags.Changed || App.StudioFastFlags.Changed || App.PendingSettingTasks.Any())
             {
                 var result = Frontend.ShowMessageBox(Strings.Menu_UnsavedChanges, MessageBoxImage.Warning, MessageBoxButton.YesNo);
 

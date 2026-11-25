@@ -6,6 +6,9 @@ namespace Bloxstrap.Integrations
     internal sealed record AccountLaunchTarget(long PlaceId = 0, long UserId = 0, string? Username = null,
         string? JobId = null, string? LinkCode = null, string? AccessCode = null, string? ShareCode = null)
     {
+        public bool IsHome => PlaceId == 0 && UserId == 0 && Username is null &&
+            JobId is null && LinkCode is null && AccessCode is null && ShareCode is null;
+
         private const string PlaceLauncher = "https://assetgame.roblox.com/game/PlaceLauncher.ashx";
 
         public static AccountLaunchTarget? Parse(string input)

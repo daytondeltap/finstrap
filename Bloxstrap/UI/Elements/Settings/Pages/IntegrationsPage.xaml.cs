@@ -13,8 +13,6 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
     /// </summary>
     public partial class IntegrationsPage
     {
-        public Models.Persistable.Settings FinstrapSettings => App.Settings.Prop;
-
         public IntegrationsPage()
         {
             DataContext = new IntegrationsViewModel();
@@ -24,14 +22,20 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
         private void NewProfile_Click(object sender, RoutedEventArgs e)
         {
             var profile = new SessionProfile { Name = "Roblox account" };
-            FinstrapSettings.SessionProfiles.Add(profile);
+            App.Settings.Prop.SessionProfiles.Add(profile);
             ProfilesList.SelectedItem = profile;
         }
 
         private void RemoveProfile_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesList.SelectedItem is SessionProfile profile)
-                FinstrapSettings.SessionProfiles.Remove(profile);
+            {
+                var groups = App.Settings.Prop.LaunchGroups.Where(g => g.Accounts.Contains(profile.UserId)).ToArray();
+                if (Frontend.ShowMessageBox($"Remove this account? It is referenced by: {string.Join(", ", groups.Select(g => g.Name))}", MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
+                    return;
+                foreach (var group in groups) { group.Accounts.RemoveAll(id => id == profile.UserId); group.Layout.Remove(profile.UserId); }
+                App.Settings.Prop.SessionProfiles.Remove(profile);
+            }
         }
 
         private void ChooseRecording_Click(object sender, RoutedEventArgs e)
@@ -75,7 +79,7 @@ namespace Bloxstrap.UI.Elements.Settings.Pages
                 return;
             }
 
-            if (profile.UserId > 0 && FinstrapSettings.SessionProfiles.Count(item => item.UserId == profile.UserId) > 1)
+            if (profile.UserId > 0 && App.Settings.Prop.SessionProfiles.Count(item => item.UserId == profile.UserId) > 1)
             {
                 Frontend.ShowMessageBox("Each account profile needs a different Roblox user ID.", MessageBoxImage.Warning);
                 return;

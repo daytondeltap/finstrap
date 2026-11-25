@@ -135,6 +135,8 @@
 
                 Directory.CreateDirectory(Path.GetDirectoryName(FileLocation)!);
                 File.WriteAllText(temporaryFile, contents);
+                if (ClassName == nameof(Settings) && File.Exists(FileLocation) && !File.Exists(FileLocation + ".pre-command-center.bak"))
+                    File.Copy(FileLocation, FileLocation + ".pre-command-center.bak");
                 File.Move(temporaryFile, FileLocation, overwrite: true);
                 _savedSnapshot = JsonSerializer.Serialize(Prop);
                 LastSaveSucceeded = true;

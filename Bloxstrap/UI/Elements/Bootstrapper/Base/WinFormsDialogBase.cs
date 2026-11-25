@@ -9,6 +9,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
     {
         public const int TaskbarProgressMaximum = 100;
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public Bloxstrap.Bootstrapper? Bootstrapper { get; set; }
 
         private bool _isClosing;
@@ -22,6 +23,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
         protected virtual double _taskbarProgressValue { get; set; }
         protected virtual bool _cancelEnabled { get; set; }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public string Message
         {
             get => _message;
@@ -34,6 +36,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public ProgressBarStyle ProgressStyle
         {
             get => _progressStyle;
@@ -46,6 +49,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int ProgressMaximum
         {
             get => _progressMaximum;
@@ -58,6 +62,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int ProgressValue
         {
             get => _progressValue;
@@ -70,6 +75,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public TaskbarItemProgressState TaskbarProgressState
         {
             get => _taskbarProgressState;
@@ -80,6 +86,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public double TaskbarProgressValue
         {
             get => _taskbarProgressValue;
@@ -90,6 +97,7 @@ namespace Bloxstrap.UI.Elements.Bootstrapper.Base
             }
         }
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public bool CancelEnabled
         {
             get => _cancelEnabled;

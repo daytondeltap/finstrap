@@ -1,5 +1,4 @@
 ﻿<ui:UiPage x:Class="Bloxstrap.UI.Elements.Settings.Pages.IntegrationsPage"
-      x:Name="IntegrationsPageView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -124,24 +123,24 @@
             </TextBlock>
         </Grid>
         <TextBlock Text="Roblox sessions" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
-        <controls:OptionControl Header="Multi-instance launching (experimental)"
+        <controls:OptionControl x:Name="MultiInstanceOption" Header="Multi-instance launching (experimental)"
                                 Description="Start with Roblox closed. Client updates can affect whether several clients stay open.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.MultiInstance, ElementName=IntegrationsPageView, Mode=TwoWay}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.MultiInstance, Mode=TwoWay}" />
         </controls:OptionControl>
-        <controls:OptionControl Header="Keep computer awake"
+        <controls:OptionControl x:Name="KeepAwakeOption" Header="Keep computer awake"
                                 Description="Prevent automatic Windows sleep while a Finstrap Roblox session is open.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.KeepComputerAwake, ElementName=IntegrationsPageView, Mode=TwoWay}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.KeepComputerAwake, Mode=TwoWay}" />
         </controls:OptionControl>
-        <controls:OptionControl Header="15-minute anti-idle preset (experimental)"
+        <controls:OptionControl x:Name="AntiIdleOption" Header="15-minute anti-idle preset (experimental)"
                                 Description="While the desktop is idle, send Space to the foreground Roblox game only. Space may cause your character to jump.">
-            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.ForegroundAntiIdle, ElementName=IntegrationsPageView, Mode=TwoWay}" />
+            <ui:ToggleSwitch IsChecked="{Binding FinstrapSettings.ForegroundAntiIdle, Mode=TwoWay}" />
         </controls:OptionControl>
 
         <TextBlock Text="Account profiles and TinyTask recordings" FontSize="20" FontWeight="Medium" Margin="0,16,0,0" />
         <TextBlock Text="Open a profile in a separate window of your default browser. Sign in there, then press Play on Roblox. Finstrap matches the account by user ID after the game joins. Use that client's tray menu to play its recording."
                    TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         <ListBox x:Name="ProfilesList" Margin="0,8,0,0" MinHeight="48" MaxHeight="160"
-                 ItemsSource="{Binding FinstrapSettings.SessionProfiles, ElementName=IntegrationsPageView}">
+                 ItemsSource="{Binding FinstrapSettings.SessionProfiles}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding Name}" />

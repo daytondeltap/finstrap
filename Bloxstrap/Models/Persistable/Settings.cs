@@ -35,6 +35,10 @@ namespace Bloxstrap.Models.Persistable
         public bool ForegroundAntiIdle { get; set; }
         public ObservableCollection<SessionProfile> SessionProfiles { get; set; } = new();
 
+        public string? PreferredServerCountry { get; set; }
+
+        public List<LaunchGroup> LaunchGroups { get; set; } = new();
+
         // mod preset configuration
         public bool UseDisableAppPatch { get; set; } = false;
     }

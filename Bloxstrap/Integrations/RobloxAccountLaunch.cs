@@ -7,20 +7,22 @@ namespace Bloxstrap.Integrations
         public string ProfileKey { get; }
         public string Arguments { get; }
         public bool OpenDesktopHome { get; }
+        public ServerLocation? SelectedServer { get; }
 
-        public RobloxAccountLaunch(long userId, string username, string profileKey, string ticket, AccountLaunchTarget target)
+        public RobloxAccountLaunch(long userId, string username, string profileKey, string ticket, AccountLaunchTarget target, ServerLocation? selectedServer = null)
         {
-            if (userId <= 0 || !Regex.IsMatch(ticket, @"\A[A-Za-z0-9_.~=-]{16,4096}\z", RegexOptions.CultureInvariant))
+            if (userId <= 0 || ticket.Length is 0 or > 8192 || ticket.Any(ch => ch < '!' || ch > '~'))
                 throw new InvalidDataException("Roblox returned an invalid desktop launch ticket.");
 
             UserId = userId;
             Username = username;
             ProfileKey = profileKey;
+            SelectedServer = selectedServer;
             string? launcher = target.GetPlaceLauncherUrl();
             OpenDesktopHome = launcher is null;
             string mode = OpenDesktopHome ? "app" : "play";
             string launchTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-            Arguments = $"roblox-player:1+launchmode:{mode}+gameinfo:{ticket}+launchtime:{launchTime}+LaunchExp:InApp";
+            Arguments = $"roblox-player:1+launchmode:{mode}+gameinfo:{Uri.EscapeDataString(ticket)}+launchtime:{launchTime}+LaunchExp:InApp";
             if (launcher is not null)
                 Arguments += "+placelauncherurl:" + Uri.EscapeDataString(launcher);
         }

@@ -61,6 +61,7 @@ namespace Bloxstrap
         public static readonly LazyJsonManager<DistributionState> StudioState = new(nameof(StudioState));
 
         public static readonly FastFlagManager FastFlags = new();
+        public static readonly FastFlagManager StudioFastFlags = new(studio: true);
 
         public static readonly HttpClient HttpClient = new(
             new HttpClientLoggingHandler(
@@ -163,13 +164,13 @@ namespace Bloxstrap
             return true;
         }
 
-        public static async Task<GithubRelease?> GetLatestRelease()
+        public static async Task<GithubRelease?> GetLatestRelease(CancellationToken token = default)
         {
             const string LOG_IDENT = "App::GetLatestRelease";
 
             try
             {
-                var releaseInfo = await Http.GetJson<GithubRelease>($"https://api.github.com/repos/{ProjectRepository}/releases/latest");
+                var releaseInfo = await Http.GetJson<GithubRelease>($"https://api.github.com/repos/{ProjectRepository}/releases/latest", token);
 
                 if (releaseInfo is null || releaseInfo.Assets is null)
                 {
@@ -236,9 +237,41 @@ namespace Bloxstrap
             }
         }
 
-        protected override void OnStartup(StartupEventArgs e)
+        private async void RunCommandCenterSmoke(string directory)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Directory.CreateDirectory(directory);
+            Paths.Initialize(Path.Combine(directory, "config"));
+            LaunchSettings = new LaunchSettings(Array.Empty<string>());
+            Locale.Initialize();
+            try
+            {
+                await UI.Elements.Dialogs.LaunchMenuDialog.RunSmokeAsync(directory);
+                Shutdown(0);
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText(Path.Combine(directory, "result.txt"), ex.ToString());
+                Shutdown(1);
+            }
+        }
+
+        protected override async void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
+
+            if (e.Args.Length == 2 && e.Args[0] == "--clip-smoke" && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            {
+                await Integrations.WindowReplaySmoke.RunAsync(e.Args[1]);
+                return;
+            }
+
+            if (e.Args.Length == 2 && e.Args[0] == "--command-center-smoke")
+            {
+                RunCommandCenterSmoke(e.Args[1]);
+                return;
+            }
+
 
             Locale.Initialize();
 
@@ -376,6 +409,7 @@ namespace Bloxstrap
                 Settings.Load();
                 State.Load();
                 FastFlags.Load();
+                StudioFastFlags.Load();
 
                 if (!Locale.SupportedLocales.ContainsKey(Settings.Prop.Locale))
                 {
@@ -391,6 +425,15 @@ namespace Bloxstrap
                 if (!LaunchSettings.BypassUpdateCheck)
                     Installer.HandleUpgrade();
 
+#if !DEBUG && !QA_BUILD
+                if (!LaunchSettings.BypassUpdateCheck && !LaunchSettings.BackgroundUpdaterFlag.Active &&
+                    (LaunchSettings.MenuFlag.Active || (!LaunchSettings.QuietFlag.Active && LaunchSettings.RobloxLaunchMode == LaunchMode.None)) &&
+                    await AutoUpdater.TryUpdateAsync(LaunchMode.None))
+                {
+                    SoftTerminate();
+                    return;
+                }
+#endif
                 LaunchHandler.ProcessLaunchArgs();
             }
 

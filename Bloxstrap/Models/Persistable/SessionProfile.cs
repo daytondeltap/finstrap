@@ -6,6 +6,7 @@ namespace Bloxstrap.Models.Persistable
     {
         [ObservableProperty]
         private string _name = "";
+        public string Username { get; set; } = "";
         public long UserId { get; set; }
         public long PlaceId { get; set; }
         public string? LaunchProfileKey { get; set; }

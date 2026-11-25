@@ -4,7 +4,49 @@ namespace Bloxstrap
 {
     public class FastFlagManager : JsonManager<Dictionary<string, object>>
     {
-        private Dictionary<string, object> OriginalProp = new();
+        private static readonly List<string> _validPrefixes = new()
+        {
+            "FFlag", "DFFlag", "SFFlag", "FInt", "DFInt", "FString", "DFString", "FLog", "DFLog"
+        };
+
+        // values must match the entire string to avoid cases where half the string
+        // matches but the filter would still be invalid
+        private static readonly Regex _boolFilterPattern = new("^(?:true|false)(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
+        private static readonly Regex _intFilterPattern = new("^([\\d]{1,})?(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
+        private static readonly Regex _stringFilterPattern = new("^[^;]*(;[\\d]{1,})+$", RegexOptions.IgnoreCase);
+
+        internal static string? GetValidationError(string name, string value)
+        {
+            if (!_validPrefixes.Any(prefix => name.Length > prefix.Length && name.StartsWith(prefix, StringComparison.Ordinal)))
+                return Strings.Menu_FastFlagEditor_InvalidPrefix;
+            if (!name.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_'))
+                return Strings.Menu_FastFlagEditor_InvalidCharacter;
+            if (name.EndsWith("_PlaceFilter", StringComparison.Ordinal) || name.EndsWith("_DataCenterFilter", StringComparison.Ordinal))
+                return ValidateFilter(name, value) ? null : Strings.Menu_FastFlagEditor_InvalidPlaceFilter;
+            if ((name.StartsWith("FInt") || name.StartsWith("DFInt")) &&
+                !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                return Strings.Menu_FastFlagEditor_InvalidNumberValue;
+            if ((name.StartsWith("FFlag") || name.StartsWith("DFFlag") || name.StartsWith("SFFlag")) &&
+                !bool.TryParse(value, out _))
+                return Strings.Menu_FastFlagEditor_InvalidBoolValue;
+            return null;
+        }
+
+        private static bool ValidateFilter(string name, string value)
+        {
+            if(name.StartsWith("FFlag") || name.StartsWith("DFFlag"))
+                return _boolFilterPattern.IsMatch(value);
+            if (name.StartsWith("FInt") || name.StartsWith("DFInt"))
+                return _intFilterPattern.IsMatch(value);
+            if (name.StartsWith("FString") || name.StartsWith("DFString") || name.StartsWith("FLog") || name.StartsWith("DFLog"))
+                return _stringFilterPattern.IsMatch(value);
+
+            return false;
+        }
+
+        private readonly bool _studio;
+
+        public FastFlagManager(bool studio = false) => _studio = studio;
 
         public override string ClassName => nameof(FastFlagManager);
 
@@ -12,9 +54,36 @@ namespace Bloxstrap
 
         public override string FileName => "ClientAppSettings.json";
 
-        public override string FileLocation => Path.Combine(Paths.Modifications, "ClientSettings", FileName);
+        public override string FileLocation => _studio
+            ? Path.Combine(Paths.Base, "StudioClientAppSettings.json")
+            : Path.Combine(Paths.Modifications, "ClientSettings", FileName);
 
-        public bool Changed => !OriginalProp.SequenceEqual(Prop);
+        public bool Changed => HasUnsavedChanges;
+
+        // Published Roblox Player allowlist, checked November 14, 2026.
+        // https://devforum.roblox.com/t/allowlist-for-local-client-configuration-via-fast-flags/3966569/
+        public static IReadOnlySet<string> PlayerAllowlist { get; } = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "DFIntCSGLevelOfDetailSwitchingDistance",
+            "DFIntCSGLevelOfDetailSwitchingDistanceL12",
+            "DFIntCSGLevelOfDetailSwitchingDistanceL23",
+            "DFIntCSGLevelOfDetailSwitchingDistanceL34",
+            "FFlagHandleAltEnterFullscreenManually",
+            "DFFlagTextureQualityOverrideEnabled",
+            "DFIntTextureQualityOverride",
+            "FIntDebugForceMSAASamples",
+            "DFFlagDisableDPIScale",
+            "FFlagDebugGraphicsPreferD3D11",
+            "FFlagDebugSkyGray",
+            "DFFlagDebugPauseVoxelizer",
+            "DFIntDebugFRMQualityLevelOverride",
+            "FIntFRMMaxGrassDistance",
+            "FIntFRMMinGrassDistance",
+            "FFlagDebugGraphicsPreferVulkan",
+            "FFlagDebugGraphicsPreferOpenGL",
+            "FIntGrassMovementReducedMotionFactor",
+            "DFFlagSkipHighResolutiontextureMipsOnLowMemoryDevices"
+        };
 
         public static IReadOnlyDictionary<string, string> PresetFlags = new Dictionary<string, string>
         {
@@ -60,7 +129,7 @@ namespace Bloxstrap
             {
                 if (Prop.ContainsKey(key))
                 {
-                    if (key == Prop[key].ToString())
+                    if (value.ToString() == Prop[key]?.ToString())
                         return;
 
                     App.Logger.WriteLine(LOG_IDENT, $"Changing of '{key}' from '{Prop[key]}' to '{value}' is pending");
@@ -132,23 +201,17 @@ namespace Bloxstrap
             // convert all flag values to strings before saving
 
             foreach (var pair in Prop)
-                Prop[pair.Key] = pair.Value.ToString()!;
+                Prop[pair.Key] = pair.Value?.ToString() ?? "";
 
             base.Save();
 
-            // Only mark edits as saved after the write succeeds.
-            if (LastSaveSucceeded)
-                OriginalProp = new(Prop);
         }
 
         public override bool Load(bool alertFailure = true)
         {
             bool result = base.Load(alertFailure);
 
-            // clone the dictionary
-            OriginalProp = new(Prop);
-
-            if (GetPreset("Rendering.ManualFullscreen") != "False")
+            if (!_studio && GetPreset("Rendering.ManualFullscreen") is null)
                 SetPreset("Rendering.ManualFullscreen", "False");
 
             return result;

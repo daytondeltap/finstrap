@@ -1,0 +1,28 @@
+<base:WpfUiWindow x:Class="Bloxstrap.UI.Elements.Dialogs.FastFlagImportDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:base="clr-namespace:Bloxstrap.UI.Elements.Base"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Width="850" Height="500" MinWidth="590" MinHeight="340"
+    WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True"
+    Background="{ui:ThemeResource ApplicationBackgroundBrush}">
+    <DockPanel>
+        <ui:TitleBar x:Name="HeaderBar" DockPanel.Dock="Top" Padding="8" ShowMinimize="False"
+                     ShowMaximize="False" CanMaximize="False" ForceShutdown="False" />
+        <DockPanel Margin="20">
+            <TextBlock x:Name="Summary" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                <ui:Button x:Name="ApplyButton" Content="Apply changes" IsDefault="True" Appearance="Primary" Click="Apply_Click" Margin="0,0,8,0" />
+                <ui:Button Content="Close" IsCancel="True" />
+            </StackPanel>
+            <DataGrid x:Name="Entries" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Flag" Binding="{Binding Name}" Width="2*" />
+                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+                    <DataGridTextColumn Header="Result" Binding="{Binding Status}" Width="170" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </DockPanel>
+</base:WpfUiWindow>
