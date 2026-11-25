@@ -25,6 +25,14 @@ Enter **0** with a country selected to open a filtered Roblox Home window in Fin
 
 Supported browser Play links handled by Finstrap open the launch menu with the game filled in. Private invites and joining friends are available with **Any region**. Finstrap logs whether Roblox’s first observed join used the selected instance. An instance match confirms the job ID. It does not independently confirm the physical datacenter.
 
+## Local mod packs
+
+Under **Settings → Mods**, choose **Import ZIP** to preview a local cursor or sound pack. Enable the pack, save settings, and close all Roblox Player windows before the next launch. Packs at the top of the list win conflicts. Existing preset files and manual overrides have priority over packs. To restore the Roblox assets, disable the applicable packs and launch again.
+
+Put assets directly under their original Roblox paths at the ZIP root, such as `content/textures/Cursors/KeyboardMouse/ArrowCursor.png` or `content/sounds/action_jump.mp3`. The other supported slots are `ArrowFarCursor.png` in the same cursor folder and `action_footsteps_plastic.mp3`, `action_get_up.mp3`, `action_jump_land.mp3`, `action_swim.mp3`, and `impact_water.mp3` in `content/sounds`. An optional root `finstrap-mod.json` can contain `{"formatVersion":1,"name":"My pack","author":"Name","version":"1.0"}`.
+
+Pack changes are experimental and apply to the shared Windows Player installation. Finstrap skips slots missing from the installed build. It retains the previous asset files for restoration if an apply is interrupted. If Roblox rejects a replacement, disable the pack and relaunch.
+
 ## Roblox sessions
 
 - **Multi-instance launching** is experimental. Close existing Roblox Player windows before enabling it, save your settings, then launch each client through Finstrap. Roblox client updates can affect compatibility. If an update is required, Finstrap waits for existing clients to close before updating on the next launch.

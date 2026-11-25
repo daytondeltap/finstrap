@@ -259,7 +259,7 @@ namespace Bloxstrap
             await SafeGetLatestVersionInfo();
 
             bool multiPlayer = !IsStudioLaunch && App.Settings.Prop.MultiInstance;
-            bool hasActivePlayer = (multiPlayer || AccountLaunches is not null) && RobloxPlayerProcesses.HasActivePlayer();
+            bool hasActivePlayer = !IsStudioLaunch && RobloxPlayerProcesses.HasActivePlayer();
             if (AccountLaunches is not null && !multiPlayer)
             {
                 if (AccountLaunches.Count > 1 || hasActivePlayer)
@@ -270,7 +270,7 @@ namespace Bloxstrap
                 RobloxPlayerProcesses.CloseVerifiedTrayProcesses();
             }
 
-            bool preserveSessions = multiPlayer && hasActivePlayer;
+            bool preserveSessions = hasActivePlayer;
             if (!preserveSessions)
                 CleanupVersionsFolder(); // cleanup after background updater
 
@@ -313,8 +313,40 @@ namespace Bloxstrap
 
                 // we require deployment details for applying modifications for a worst case scenario,
                 // where we'd need to restore files from a package that isn't present on disk and needs to be redownloaded
-                allModificationsApplied = await ApplyModifications();
+                if (!IsStudioLaunch && RobloxPlayerProcesses.HasActivePlayer())
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Deferring file changes while a Roblox Player is running.");
+                }
+                else
+                {
+                    var packs = !IsStudioLaunch && !App.LaunchSettings.BackgroundUpdaterFlag.Active
+                        ? new ModPackApplier(_latestVersionDirectory, Paths.Modifications,
+                            new ModPackStore(Path.Combine(Paths.Base, "ModPacks"))) : null;
+                    packs?.Recover();
+                    allModificationsApplied = await ApplyModifications();
+                    if (packs is not null && allModificationsApplied && !_cancelTokenSource.IsCancellationRequested &&
+                        !RobloxPlayerProcesses.HasActivePlayer())
+                    {
+                        try
+                        {
+                            var missing = packs.Apply(App.Settings.Prop.ModPacks);
+                            foreach (string target in missing)
+                                App.Logger.WriteLine(LOG_IDENT, $"Mod pack target is unavailable on this build: {target}");
+                            allModificationsApplied = missing.Count == 0;
+                        }
+                        catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) &&
+                            !packs.HasPendingRecovery)
+                        {
+                            App.Logger.WriteException(LOG_IDENT, ex);
+                            allModificationsApplied = false;
+                        }
+                    }
+                }
             }
+
+            if (!IsStudioLaunch && _noConnection && !preserveSessions && !RobloxPlayerProcesses.HasActivePlayer())
+                new ModPackApplier(Path.GetDirectoryName(AppData.ExecutablePath)!, Paths.Modifications,
+                    new ModPackStore(Path.Combine(Paths.Base, "ModPacks"))).Recover();
 
             // check registry entries for every launch, just in case the stock bootstrapper changes it back
 

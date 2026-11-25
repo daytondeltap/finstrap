@@ -12,6 +12,7 @@ Directory.CreateDirectory(Paths.Base);
 try
 {
     await CheckServerRegionsAsync(Check);
+    LocalModPackChecks.Run(Paths.Base, Check);
     var fit = WindowLayoutMath.Fit(.75,.9,.5,.5,-1920,0,1920,1080);
     Check(fit.X == -960 && fit.Y == 540 && fit.Width == 960, "layouts clamp to monitor bounds including negative origins");
     fit = WindowLayoutMath.Fit(double.NaN,double.PositiveInfinity,double.MaxValue,-1,0,0,800,600);

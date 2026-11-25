@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
@@ -19,6 +20,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             SmokeMode = true;
             await VerifySessionSettingsAsync();
             VerifyFastFlagEditor();
+            await VerifyModPackPageAsync(directory);
             var first = new SessionProfile { UserId = 123, Username = "SmokeOne", Name = "First account" };
             var second = new SessionProfile { UserId = 456, Username = "SmokeTwo", Name = "Second account" };
             App.Settings.Prop.Theme = Enums.Theme.Dark;
@@ -95,13 +97,41 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     encoder.Save(output);
                 }
 
-                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: session switches persisted and reloaded, verified account saved, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
+                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: mod pack imported, previewed and saved, session switches persisted and reloaded, verified account saved, group saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
             }
             finally
             {
                 App.Settings.Prop.Theme = Enums.Theme.Dark;
                 window.Close();
             }
+        }
+
+        private static async Task VerifyModPackPageAsync(string directory)
+        {
+            string path = Path.Combine(directory, "smoke-mod.zip");
+            using (var archive = new ZipArchive(File.Create(path), ZipArchiveMode.Create))
+            {
+                using var source = Resource.GetStream("Cursor.From2006.ArrowCursor.png");
+                using var target = archive.CreateEntry(ModPackStore.SupportedTargets[0]).Open();
+                source.CopyTo(target);
+            }
+
+            var page = new ModsPage();
+            var host = new Window { Content = new Frame { Content = page } };
+            host.Show();
+            try
+            {
+                await page.ImportPackAsync(path);
+                if (page.PackImagePreview.Source is null || App.Settings.Prop.ModPacks.Single().Enabled)
+                    throw new InvalidOperationException("Imported pack did not display its cursor or was enabled by default.");
+
+                page.TogglePackButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                new MainWindowViewModel().SaveSettingsCommand.Execute(null);
+                var persisted = new JsonManager<Models.Persistable.Settings>();
+                if (!App.Settings.LastSaveSucceeded || !persisted.Load() || !persisted.Prop.ModPacks.Single().Enabled)
+                    throw new InvalidOperationException("The enabled mod pack did not survive a save and reload.");
+            }
+            finally { host.Close(); File.Delete(path); }
         }
 
         private static void VerifyFastFlagEditor()
