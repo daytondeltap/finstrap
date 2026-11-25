@@ -128,6 +128,27 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private AccountCard? Card(object sender)=>(sender as FrameworkElement)?.DataContext as AccountCard;
         private async void LaunchCard_Click(object sender,RoutedEventArgs e)
         { if(Card(sender) is {} c) await ConfirmAndLaunchAsync(new[]{c.Profile}); }
+        private async void RejoinCard_Click(object sender, RoutedEventArgs e)
+        {
+            if (_launchingAccounts || Card(sender) is not { } card)
+                return;
+
+            try
+            {
+                var server = LastPublicServer.Read(Paths.LastPublicServers, card.Profile.UserId);
+                if (server is null)
+                {
+                    AccountStatus.Text = "No public server has been recorded for this account yet.";
+                    return;
+                }
+
+                await LaunchAccountsAsync(new[] { card.Profile }, server.ToTarget(), exactRejoin: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AccountStatus.Text = "Finstrap could not read this account's last server.";
+            }
+        }
         private void ReconnectCard_Click(object sender,RoutedEventArgs e) { if(Card(sender) is {} c) LinkAccount(c.Profile); }
         private void ActOnSession(object sender,Action<SessionSnapshot> action)
         {
@@ -163,6 +184,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if(Groups.SelectedItem is not LaunchGroup g) return;
             if(g.Version != 1) { AccountStatus.Text="This group was created by a newer Finstrap version."; return; }
             GroupName.Text=g.Name; AccountDestination.Text=g.Destination;
+            GroupChannel.Text = g.PlayerChannel ?? "";
             var cards=Cards.ToArray();
             AccountsList.ItemsSource=g.Accounts.Select(id=>cards.FirstOrDefault(c=>c.Profile.UserId==id)).OfType<AccountCard>()
                 .Concat(cards.Where(c=>!g.Accounts.Contains(c.Profile.UserId))).ToArray();
@@ -174,14 +196,25 @@ namespace Bloxstrap.UI.Elements.Dialogs
             try
             {
                 AccountLaunchTarget.Parse(AccountDestination.Text);
+                string? channel = PlayerBuilds.ParseChannel(GroupChannel.Text);
                 var ids=Cards.Where(c=>AccountsList.SelectedItems.Contains(c)).Select(c=>c.Profile.UserId).ToList();
                 if(ids.Count==0 || string.IsNullOrWhiteSpace(GroupName.Text)) { AccountStatus.Text="Enter a group name and select accounts."; return; }
                 var group=Groups.SelectedItem as LaunchGroup;
                 if(group is null || group.Name!=GroupName.Text.Trim()) { group=new(); App.Settings.Prop.LaunchGroups.Add(group); }
                 group.Name=GroupName.Text.Trim(); group.Accounts=ids; group.Destination=AccountDestination.Text.Trim();
+                group.PlayerChannel = channel;
                 SaveDashboard(); Groups.Items.Refresh(); Groups.SelectedItem=group;
             }
             catch(FormatException ex) { AccountStatus.Text=ex.Message; }
+        }
+        private async void LaunchGroup_Click(object sender, RoutedEventArgs e)
+        {
+            if (_launchingAccounts || Groups.SelectedItem is not LaunchGroup { Version: 1 } group)
+                return;
+
+            var profiles = Cards.ToDictionary(card => card.Profile.UserId, card => card.Profile);
+            var accounts = group.Accounts.Distinct().Where(profiles.ContainsKey).Select(id => profiles[id]).ToArray();
+            await ConfirmAndLaunchAsync(accounts, group);
         }
         private void DeleteGroup_Click(object sender,RoutedEventArgs e)
         {
@@ -205,7 +238,16 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if(_launchingAccounts)return;
             await RefreshSessionsAsync();
             if(Frontend.ShowMessageBox("Retry only if the failed account has no game window open. An untracked client cannot be identified safely. Continue?",MessageBoxImage.Question,MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-            await ConfirmAndLaunchAsync(Cards.Where(c=>Queue.States.TryGetValue(c.Profile.UserId,out var state) && state==AccountLaunchState.Failed && !ActiveSessions.Any(s=>s.UserId==c.Profile.UserId)).Select(c=>c.Profile).ToArray());
+            var accounts = Cards.Where(c => Queue.States.TryGetValue(c.Profile.UserId, out var state) &&
+                state == AccountLaunchState.Failed && !ActiveSessions.Any(s => s.UserId == c.Profile.UserId))
+                .Select(c => c.Profile).ToArray();
+            if (accounts.Length == 0)
+                return;
+
+            if (_retryRejoinTarget is { } rejoin)
+                await LaunchAccountsAsync(accounts, rejoin, exactRejoin: true);
+            else
+                await ConfirmAndLaunchAsync(accounts, _retryGroup);
         }
         private async void LaunchDefault_Click(object sender,RoutedEventArgs e)
         {

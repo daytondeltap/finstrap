@@ -45,9 +45,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private readonly Dictionary<(long UserId, string Country), AccountSignInDialog> _filteredHomes = new();
+        private readonly Dictionary<(long UserId, string Country, string? Channel), AccountSignInDialog> _filteredHomes = new();
 
-        private void OpenFilteredHome(SessionProfile? profile, string country)
+        private void OpenFilteredHome(SessionProfile? profile, string country, LaunchGroup? group)
         {
             if (profile is null)
             {
@@ -62,7 +62,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
 
             var account = profile;
-            var key = (account.UserId, country);
+            var key = (account.UserId, country, group?.PlayerChannel);
             if (_filteredHomes.TryGetValue(key, out var existing))
             {
                 existing.Activate();
@@ -76,7 +76,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 var linked = App.Settings.Prop.SessionProfiles.FirstOrDefault(item => item.UserId == account.UserId);
                 if (linked is null)
                     return "This account is no longer linked. Add it again in Finstrap.";
-                await LaunchAccountsAsync(new[] { linked }, target, country);
+                await LaunchAccountsAsync(new[] { linked }, target, country, group: group);
                 return AccountStatus.Text;
             }) { Owner = this };
             _filteredHomes[key] = home;

@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Bloxstrap/Integrations/LastPublicServer.cs" Link="LastPublicServer.cs" />
+    <Compile Include="../Bloxstrap/Integrations/PlayerBuilds.cs" Link="PlayerBuilds.cs" />
+    <Compile Include="../Bloxstrap/Models/Persistable/DistributionState.cs" Link="DistributionState.cs" />
     <Compile Include="../Bloxstrap/Integrations/ModPackStore.cs" Link="ModPackStore.cs" />
     <Compile Include="../Bloxstrap/Integrations/ModPackApplier.cs" Link="ModPackApplier.cs" />
     <Compile Include="../Bloxstrap/Models/Persistable/ModPack.cs" Link="ModPack.cs" />

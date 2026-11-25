@@ -11,6 +11,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
     {
         public NextAction CloseAction = NextAction.Terminate;
         private bool _launchingAccounts;
+        private AccountLaunchTarget? _retryRejoinTarget;
+        private LaunchGroup? _retryGroup;
 
         public LaunchMenuDialog()
         {
@@ -81,7 +83,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 await ConfirmAndLaunchAsync(AccountsList.Items.Cast<AccountCard>().Select(c => c.Profile).ToArray());
         }
 
-        private async Task ConfirmAndLaunchAsync(SessionProfile[] accounts)
+        private async Task ConfirmAndLaunchAsync(SessionProfile[] accounts, LaunchGroup? group = null)
         {
             if (accounts.Length == 0)
                 return;
@@ -91,14 +93,18 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 return;
             }
             string? country = SelectedServerCountry;
-            string preview = string.Join("\n", accounts.Select((p,i) => $"{i+1}. {p.Name} → {(string.IsNullOrWhiteSpace(AccountDestination.Text) ? p.PlaceId.ToString() : AccountDestination.Text)}"));
+            string destinationText = group?.Destination ?? AccountDestination.Text;
+            string preview = string.Join("\n", accounts.Select((p,i) => $"{i+1}. {p.Name} → {(string.IsNullOrWhiteSpace(destinationText) ? p.PlaceId.ToString() : destinationText)}"));
+            if (group?.PlayerChannel is { } channel)
+                preview += $"\n\nRoblox channel: {channel}";
             if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview + (country is null ? "" : $"\n\nServer country: {country} (estimated)"), MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 return;
-            await LaunchAccountsAsync(accounts);
+            await LaunchAccountsAsync(accounts, group: group);
         }
 
         private async Task LaunchAccountsAsync(IReadOnlyList<SessionProfile?> accounts,
-            AccountLaunchTarget? homeDestination = null, string? homeCountry = null)
+            AccountLaunchTarget? homeDestination = null, string? homeCountry = null, bool exactRejoin = false,
+            LaunchGroup? group = null)
         {
             if (_launchingAccounts)
                 return;
@@ -108,14 +114,14 @@ namespace Bloxstrap.UI.Elements.Dialogs
             var failures = new List<string>();
             try
             {
-                string? country = homeCountry ?? SelectedServerCountry;
-                var destination = homeDestination ?? AccountLaunchTarget.Parse(AccountDestination.Text);
+                string? country = exactRejoin ? null : homeCountry ?? SelectedServerCountry;
+                var destination = homeDestination ?? AccountLaunchTarget.Parse(group?.Destination ?? AccountDestination.Text);
                 if (country is not null)
                 {
                     var homeAccounts = accounts.Where(profile =>
                         (destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0)).IsHome).ToArray();
                     foreach (var profile in homeAccounts)
-                        OpenFilteredHome(profile, country);
+                        OpenFilteredHome(profile, country, group);
                     if (homeAccounts.Length > 0)
                     {
                         accounts = accounts.Except(homeAccounts).ToArray();
@@ -129,8 +135,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
 
                 await RefreshSessionsAsync();
                 accounts = accounts.Where(p => p is null || !ActiveSessions.Any(s => s.UserId == p.UserId)).ToArray();
-                if (accounts.Count == 0) { AccountStatus.Text = "These accounts already have tracked sessions."; return; }
+                if (accounts.Count == 0)
+                {
+                    AccountStatus.Text = exactRejoin ? "Close this account's current Roblox window before rejoining." :
+                        "These accounts already have tracked sessions.";
+                    return;
+                }
                 Queue.Begin(accounts.Where(p => p is not null).Select(p => p!.UserId));
+                _retryRejoinTarget = exactRejoin ? destination : null;
+                _retryGroup = group;
                 AccountStatus.Text = "Preparing Roblox…";
                 if (destination is not null && country is null)
                     destination = await destination.ResolveFriendAsync();
@@ -167,13 +180,15 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 }
 
                 var bootstrapper = new Bloxstrap.Bootstrapper(LaunchMode.Player) { AccountLaunches = launches,
+                    PlayerChannelOverride = group?.PlayerChannel,
                     StopAccountQueue = () => Queue.CancelRemaining,
                     AccountLaunchCompleted = (id, ready) => Dispatcher.Invoke(() => Queue.Set(id, ready ? AccountLaunchState.Ready : AccountLaunchState.Failed)) };
                 await Task.Run(bootstrapper.Run);
                 int started = bootstrapper.AccountPlayersStarted;
-                AccountStatus.Text = started == accounts.Count
-                    ? started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
-                    : $"Started {started} of {accounts.Count} requested Roblox clients.";
+                AccountStatus.Text = bootstrapper.PlayerSelectionError ?? (started == accounts.Count
+                    ? exactRejoin ? "Roblox is opening the recorded server. It must still be active and accessible."
+                        : started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
+                    : $"Started {started} of {accounts.Count} requested Roblox clients.");
                 if (locations.Count > 0)
                     AccountStatus.Text += "\nSelected server locations (estimated): " + string.Join("; ", locations.Distinct().Select(location => location.ToString()).Distinct());
                 if (failures.Count > 0)
