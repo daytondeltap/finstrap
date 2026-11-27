@@ -59,7 +59,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 var savedSettings = new JsonManager<Models.Persistable.Settings>();
                 Check(savedSettings.Load() && savedSettings.Prop.SessionProfiles.Single(p => p.UserId == first.UserId).LaunchProfileKey == profileKey,
                     "A verified account must be saved before requesting its launch ticket.");
-                await VerifyBackgroundAccountProfileAsync(window, first, second);
+                await VerifyBackgroundAccountProfileAsync(window, first);
                 foreach (var card in window.Cards) window.AccountsList.SelectedItems.Add(card);
                 window.GroupName.Text = "Smoke group";
                 window.GroupChannel.Text = "Production";
@@ -125,9 +125,9 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private static async Task VerifyBackgroundAccountProfileAsync(LaunchMenuDialog window, SessionProfile first, SessionProfile second)
+        private static async Task VerifyBackgroundAccountProfileAsync(LaunchMenuDialog window, SessionProfile first)
         {
-            second.LaunchProfileKey = Guid.NewGuid().ToString("N");
+            var second = new SessionProfile { Name = "Unlinked test account", LaunchProfileKey = Guid.NewGuid().ToString("N") };
             using (var seed = new Microsoft.Web.WebView2.Wpf.WebView2())
             {
                 window.AccountSessionHost.Children.Add(seed);
@@ -139,7 +139,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     cookie.IsSecure = true;
                     cookie.Expires = DateTime.UtcNow.AddMinutes(10);
                     manager.AddOrUpdateCookie(cookie);
-                    if (seed.Source is not null)
+                    if (seed.Source is { AbsoluteUri: not "about:blank" })
                         throw new InvalidOperationException("The saved account profile navigated to a web page.");
                 }
                 finally { window.AccountSessionHost.Children.Remove(seed); }

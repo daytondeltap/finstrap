@@ -35,7 +35,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
         {
             if (_launchingAccounts)
                 e.Cancel = true;
-            else if (App.Settings.HasUnsavedChanges && Frontend.ShowMessageBox("Some account or group changes have not been saved. Close anyway?", MessageBoxImage.Warning, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
+            else if (!SmokeMode && App.Settings.HasUnsavedChanges && Frontend.ShowMessageBox("Some account or group changes have not been saved. Close anyway?", MessageBoxImage.Warning, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 e.Cancel = true;
             base.OnClosing(e);
         }
