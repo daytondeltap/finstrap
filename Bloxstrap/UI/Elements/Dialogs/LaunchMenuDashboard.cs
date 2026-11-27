@@ -72,7 +72,16 @@ namespace Bloxstrap.UI.Elements.Dialogs
                         resources=$" · {p.WorkingSet64/1048576} MB · CPU {percent:F1}%";
                     }
                     catch(Exception ex) when(ex is ArgumentException or InvalidOperationException or Win32Exception) { }
-                    card.Detail=(session.InGame ? $"Joined game · place {session.PlaceId}" : "Client started · game unknown")+resources;
+                    string regionStatus = session.RegionJoin switch
+                    {
+                        RegionalJoin.Checking => " · Waiting to verify server",
+                        RegionalJoin.Matched => $" · Launch server confirmed ({session.EstimatedCountry} estimated)",
+                        RegionalJoin.Different => " · Roblox joined a different server",
+                        RegionalJoin.Unverified => " · Server could not be verified",
+                        _ => ""
+                    };
+                    card.Detail = (session.InGame ? $"Joined game · place {session.PlaceId}" : "Client started · game unknown")
+                        + regionStatus + resources;
                 }
                 foreach(int pid in CpuSamples.Keys.Except(pids).ToArray()) CpuSamples.Remove(pid);
             }
@@ -117,13 +126,21 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private bool LinkAccount(SessionProfile? profile)
         {
             if(_launchingAccounts) return false;
-            var target = new AccountLaunchTarget();
-            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target), linkOnly: true) { Owner = this };
-            if (dialog.ShowDialog() != true)
+            if (PromptToLinkAccount(profile, new()) is null)
                 return false;
 
             AccountStatus.Text = "Account linked.";
             return true;
+        }
+        private SessionProfile? PromptToLinkAccount(SessionProfile? profile, AccountLaunchTarget target)
+        {
+            SessionProfile? linked = null;
+            var dialog = new AccountSignInDialog(profile, (id, name, key) =>
+            {
+                SaveVerifiedAccount(id, name, key, target);
+                linked = App.Settings.Prop.SessionProfiles.First(p => p.UserId == id);
+            }) { Owner = this };
+            return dialog.ShowDialog() == true ? linked : null;
         }
         private AccountCard? Card(object sender)=>(sender as FrameworkElement)?.DataContext as AccountCard;
         private async void LaunchCard_Click(object sender,RoutedEventArgs e)
@@ -232,7 +249,11 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private void MoveUp_Click(object sender,RoutedEventArgs e)=>Move(-1);
         private void MoveDown_Click(object sender,RoutedEventArgs e)=>Move(1);
         private void CancelRemaining_Click(object sender,RoutedEventArgs e)
-        { Queue.CancelRemaining=true; AccountStatus.Text="Remaining launches cancelled; the current launch may finish."; }
+        {
+            Queue.CancelRemaining = true;
+            _serverOperation?.Cancel();
+            AccountStatus.Text = "Cancelling pending work. Roblox may finish opening a client that already started.";
+        }
         private async void RetryFailed_Click(object sender,RoutedEventArgs e)
         {
             if(_launchingAccounts)return;
@@ -246,6 +267,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
 
             if (_retryRejoinTarget is { } rejoin)
                 await LaunchAccountsAsync(accounts, rejoin, exactRejoin: true);
+            else if (_retryDestination is { } destination)
+                await LaunchAccountsAsync(accounts, destination, group: _retryGroup);
             else
                 await ConfirmAndLaunchAsync(accounts, _retryGroup);
         }
@@ -254,7 +277,10 @@ namespace Bloxstrap.UI.Elements.Dialogs
             if(_launchingAccounts)return;
             if(AccountsList.SelectedItems.Count>0) await ConfirmAndLaunchAsync(Cards.Where(c=>AccountsList.SelectedItems.Contains(c)).Select(c=>c.Profile).ToArray());
             else if (SelectedServerCountry is not null)
-                AccountStatus.Text = "Select a linked account and enter a public game to launch with the country filter.";
+            {
+                ShowGameFinder();
+                AccountStatus.Text = "Choose a game and select a linked account to play in your chosen country.";
+            }
             else
                 ((Bloxstrap.UI.ViewModels.Installer.LaunchMenuViewModel)DataContext).LaunchRobloxCommand.Execute(null);
         }

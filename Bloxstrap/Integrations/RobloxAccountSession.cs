@@ -43,17 +43,21 @@ namespace Bloxstrap.Integrations
             response.EnsureSuccessStatusCode();
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
             var root = body.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("joinScript", out var script) ||
-                script.ValueKind != JsonValueKind.Object)
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("joinScript", out var script))
                 return null;
-            if (script.TryGetProperty("GameId", out var game) &&
+            using var encoded = script.ValueKind == JsonValueKind.String ? JsonDocument.Parse(script.GetString()!) : null;
+            script = encoded?.RootElement ?? script;
+            if (script.ValueKind != JsonValueKind.Object)
+                return null;
+            if ((script.TryGetProperty("GameId", out var game) || script.TryGetProperty("gameId", out game)) &&
                 (game.ValueKind != JsonValueKind.String || !Guid.TryParse(game.GetString(), out Guid actual) || actual != jobId))
                 return null;
-            if (script.TryGetProperty("PlaceId", out var place) &&
+            if ((script.TryGetProperty("PlaceId", out var place) || script.TryGetProperty("placeId", out place)) &&
                 (!long.TryParse(place.ToString(), out long actualPlace) || actualPlace != placeId))
                 return null;
 
-            int? datacenterId = script.TryGetProperty("DataCenterId", out var datacenter) &&
+            int? datacenterId = (script.TryGetProperty("DataCenterId", out var datacenter) ||
+                script.TryGetProperty("dataCenterId", out datacenter)) &&
                 int.TryParse(datacenter.ToString(), out int id) && id > 0 ? id : null;
             return new(datacenterId, ServerRegionLookup.ReadAddresses(script));
         }

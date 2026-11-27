@@ -14,17 +14,19 @@
    <Border x:Name="DashboardSurface" Background="{ui:ThemeResource ApplicationBackgroundBrush}" Padding="24">
     <DockPanel>
      <StackPanel DockPanel.Dock="Top">
+      <Grid x:Name="AccountSessionHost" Height="1" Opacity="0" IsHitTestVisible="False" Focusable="False"/>
       <TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold"/>
       <TextBlock Text="Launch together. Keep track of every session." Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,16"/>
       <WrapPanel>
        <ui:Button Content="Settings" Command="{Binding LaunchSettingsCommand}" Margin="0,0,8,8"/>
        <ui:Button Content="Roblox Studio" Command="{Binding LaunchRobloxStudioCommand}" Margin="0,0,8,8"/>
        <ui:Button Content="Launch Roblox" Click="LaunchDefault_Click" Margin="0,0,8,8"/>
+       <ui:Button Content="Find a game" Click="FindGame_Click" Margin="0,0,8,8"/>
        <ui:Button Content="Export diagnostics" Click="ExportDiagnostics_Click" Margin="0,0,8,8"/>
       </WrapPanel>
+      <TextBlock x:Name="AccountStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Margin="0,0,0,8"/>
      </StackPanel>
      <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-      <TextBlock x:Name="AccountStatus" TextWrapping="Wrap"/>
       <WrapPanel Margin="0,8,0,0">
        <ui:Button Content="Cancel remaining" Click="CancelRemaining_Click" Margin="0,0,8,0"/>
        <ui:Button Content="Retry failed" Click="RetryFailed_Click" Margin="0,0,8,0"/>
@@ -36,6 +38,25 @@
      <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
       <DockPanel Margin="0,0,20,0">
+       <Border x:Name="GameFinder" DockPanel.Dock="Top" Visibility="Collapsed" Padding="12" CornerRadius="8"
+               Margin="0,0,0,12" Background="{ui:ThemeResource CardBackgroundFillColorDefaultBrush}">
+        <StackPanel>
+         <TextBlock Text="Find a Roblox game" FontSize="20" FontWeight="SemiBold"/>
+         <TextBlock x:Name="GameFinderHint" TextWrapping="Wrap" Margin="0,4,0,8"/>
+         <DockPanel>
+          <ui:Button x:Name="SearchGamesButton" DockPanel.Dock="Right" Content="Search" Click="SearchGames_Click" Margin="8,0,0,0"/>
+          <ui:TextBox x:Name="GameQuery" PlaceholderText="Game name, place ID, or public server link"
+                      AutomationProperties.Name="Roblox game search" KeyDown="GameQuery_KeyDown"/>
+         </DockPanel>
+         <ListBox x:Name="GameResults" DisplayMemberPath="Name" MaxHeight="156" Margin="0,8,0,0"
+                  AutomationProperties.Name="Roblox search results" SelectionChanged="GameResults_SelectionChanged"
+                  MouseDoubleClick="GameResults_DoubleClick"/>
+         <WrapPanel Margin="0,8,0,0">
+          <ui:Button x:Name="UseGame" Content="Use selected game" Click="UseGame_Click" IsEnabled="False" Margin="0,0,8,0"/>
+          <ui:Button Content="Close game finder" Click="CloseGameFinder_Click"/>
+         </WrapPanel>
+        </StackPanel>
+       </Border>
        <TextBlock x:Name="AccountHint" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"/>
        <ListBox x:Name="AccountsList" SelectionChanged="AccountsSelectionChanged" AutomationProperties.Name="Accounts">
         <ListBox.ItemTemplate><DataTemplate>
@@ -76,13 +97,14 @@
        <WrapPanel><ui:Button Content="↑" Click="MoveUp_Click"/><ui:Button Content="↓" Click="MoveDown_Click" Margin="8,0"/></WrapPanel>
        <TextBlock Text="Destination" Margin="0,16,0,4"/>
        <ui:TextBox x:Name="AccountDestination" PlaceholderText="Place ID, server link, or friend"/>
-       <TextBlock Text="Blank uses saved places. 0 opens Roblox Home with the selected country filter." TextWrapping="Wrap" Margin="0,4,0,12"/>
+       <TextBlock Text="Blank uses saved places. With a country selected, 0 opens Finstrap’s game finder. Any region lets 0 open Roblox Home." TextWrapping="Wrap" Margin="0,4,0,12"/>
        <TextBlock Text="Server country" Margin="0,0,0,4"/>
        <ComboBox x:Name="ServerCountry" DisplayMemberPath="Name" SelectedValuePath="Code"
                  SelectionChanged="ServerCountry_Changed" AutomationProperties.Name="Server country"/>
+       <TextBlock Text="Applies to public games launched from Finstrap. If no match is found, the game stays closed." TextWrapping="Wrap" Margin="0,4,0,0"/>
        <ui:Button Content="Check server location" Click="CheckServerLocation_Click" Margin="0,8,0,12"/>
-       <ui:Button x:Name="LaunchSelected" Appearance="Primary" Content="Preview and launch selected" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
-       <ui:Button x:Name="LaunchAll" Content="Preview and launch all" Click="LaunchAll_Click"/>
+       <ui:Button x:Name="LaunchSelected" Appearance="Primary" Content="Play with selected accounts" Click="LaunchSelected_Click" Margin="0,0,0,8"/>
+       <ui:Button x:Name="LaunchAll" Content="Play with all accounts" Click="LaunchAll_Click"/>
       </StackPanel>
      </Grid>
     </DockPanel>

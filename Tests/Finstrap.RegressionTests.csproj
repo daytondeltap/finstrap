@@ -17,6 +17,7 @@
     <None Include="../Bloxstrap/Resources/Mods/Sounds/OldJump.mp3" Link="ModPackSound.mp3" CopyToOutputDirectory="PreserveNewest" />
 
     <Compile Include="../Bloxstrap/Integrations/RobloxDatacenters.cs" Link="RobloxDatacenters.cs" />
+    <Compile Include="../Bloxstrap/Integrations/RobloxGameSearch.cs" Link="RobloxGameSearch.cs" />
     <Compile Include="../Bloxstrap/Integrations/ServerRegionLookup.cs" Link="ServerRegionLookup.cs" />
     <Compile Include="../Bloxstrap/Integrations/WindowLayoutMath.cs" Link="WindowLayoutMath.cs" />
     <Compile Include="../Bloxstrap/Integrations/SessionChannel.cs" Link="SessionChannel.cs" />

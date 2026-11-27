@@ -8,6 +8,8 @@ namespace Bloxstrap.Integrations
             new[] { City, Region, Country }.Where(part => !string.IsNullOrWhiteSpace(part)).Distinct());
     }
 
+    internal readonly record struct ServerSearchProgress(int Checked, int Located);
+
     internal sealed class ServerRegionLookup(HttpClient publicClient, RobloxAccountSession account, RobloxDatacenters datacenters)
     {
         private const int MaxProbes = 36;
@@ -15,7 +17,8 @@ namespace Bloxstrap.Integrations
         private sealed class ServerListRateLimitException : Exception;
         private sealed record CandidatePage(List<Guid> Candidates, string? NextCursor);
 
-        public async Task<ServerLocation> FindAsync(AccountLaunchTarget target, string? country, CancellationToken token)
+        public async Task<ServerLocation> FindAsync(AccountLaunchTarget target, string? country, CancellationToken token,
+            Action<ServerSearchProgress>? progress = null)
         {
             if (target.PlaceId <= 0 || target.UserId != 0 || target.Username is not null ||
                 target.ShareCode is not null || target.LinkCode is not null || target.AccessCode is not null)
@@ -24,6 +27,7 @@ namespace Bloxstrap.Integrations
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromSeconds(40));
             var seen = new HashSet<Guid>();
+            int located = 0;
             try
             {
                 if (target.JobId is not null)
@@ -78,7 +82,9 @@ namespace Bloxstrap.Integrations
 
                 throw new FormatException(country is null
                     ? $"No available public server returned a location estimate ({seen.Count} checked)."
-                    : $"No available public server matched {country} in {seen.Count} checks. Try again or choose another country.");
+                    : located == 0
+                        ? $"No reliable location was available for {seen.Count} public server checks. Try again or choose Any region."
+                        : $"No available public server matched {country}. Located {located} of {seen.Count} servers checked. Try again or choose another country.");
 
                 async Task<ServerLocation?> ProbePageAsync(CandidatePage page, int limit)
                 {
@@ -97,6 +103,8 @@ namespace Bloxstrap.Integrations
                         using var probeTimeout = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
                         probeTimeout.CancelAfter(TimeSpan.FromSeconds(7));
                         var location = await LocateAsync(target.PlaceId, job, country is null, probeTimeout.Token);
+                        if (location is not null)
+                            located++;
                         return location is not null && Matches(location, country) ? location : null;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode is null or >= HttpStatusCode.InternalServerError)
@@ -105,6 +113,7 @@ namespace Bloxstrap.Integrations
                     }
                     catch (JsonException) { return null; }
                     catch (OperationCanceledException) when (!timeout.IsCancellationRequested) { return null; }
+                    finally { progress?.Invoke(new(seen.Count, located)); }
                 }
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
@@ -199,11 +208,12 @@ namespace Bloxstrap.Integrations
         internal static IReadOnlyList<IPAddress> ReadAddresses(JsonElement script)
         {
             var addresses = new List<IPAddress>();
-            if (script.TryGetProperty("UdmuxEndpoints", out var endpoints) && endpoints.ValueKind == JsonValueKind.Array)
+            if ((script.TryGetProperty("UdmuxEndpoints", out var endpoints) || script.TryGetProperty("udmuxEndpoints", out endpoints)) &&
+                endpoints.ValueKind == JsonValueKind.Array)
                 foreach (var endpoint in endpoints.EnumerateArray())
-                    if (TryPublicIPv4(ReadString(endpoint, "Address")) is { } relay)
+                    if (TryPublicIPv4(ReadString(endpoint, "Address") ?? ReadString(endpoint, "address")) is { } relay)
                         addresses.Add(relay);
-            if (TryPublicIPv4(ReadString(script, "MachineAddress")) is { } machine)
+            if (TryPublicIPv4(ReadString(script, "MachineAddress") ?? ReadString(script, "machineAddress")) is { } machine)
                 addresses.Add(machine);
             return addresses.Distinct().ToArray();
         }

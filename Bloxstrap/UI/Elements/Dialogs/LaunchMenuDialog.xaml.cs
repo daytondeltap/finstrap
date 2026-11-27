@@ -13,6 +13,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
         private bool _launchingAccounts;
         private AccountLaunchTarget? _retryRejoinTarget;
         private LaunchGroup? _retryGroup;
+        private AccountLaunchTarget? _retryDestination;
 
         public LaunchMenuDialog()
         {
@@ -94,45 +95,56 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
             string? country = SelectedServerCountry;
             string destinationText = group?.Destination ?? AccountDestination.Text;
-            string preview = string.Join("\n", accounts.Select((p,i) => $"{i+1}. {p.Name} → {(string.IsNullOrWhiteSpace(destinationText) ? p.PlaceId.ToString() : destinationText)}"));
-            if (group?.PlayerChannel is { } channel)
-                preview += $"\n\nRoblox channel: {channel}";
-            if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview + (country is null ? "" : $"\n\nServer country: {country} (estimated)"), MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
-                return;
-            await LaunchAccountsAsync(accounts, group: group);
+            try
+            {
+                var destination = AccountLaunchTarget.Parse(destinationText);
+                if (accounts.Length > 1 && (country is null ||
+                    accounts.All(account => !(destination ?? new AccountLaunchTarget(PlaceId: account.PlaceId)).IsHome)))
+                {
+                    string preview = string.Join("\n", accounts.Select(p =>
+                        $"{p.Name} → {(string.IsNullOrWhiteSpace(destinationText) ? p.PlaceId.ToString() : destinationText)}"));
+                    if (group?.PlayerChannel is { } channel)
+                        preview += $"\n\nRoblox channel: {channel}";
+                    if (country is not null)
+                        preview += $"\n\nServer country: {(ServerCountry.SelectedItem as CountryChoice)?.Name ?? country}";
+                    if (Frontend.ShowMessageBox("Launch these accounts?\n\n" + preview,
+                        MessageBoxImage.Question, MessageBoxButton.YesNo) != MessageBoxResult.Yes)
+                        return;
+                }
+
+                await LaunchAccountsAsync(accounts, destination, group: group);
+            }
+            catch (FormatException ex)
+            {
+                AccountStatus.Text = ex.Message;
+            }
         }
 
         private async Task LaunchAccountsAsync(IReadOnlyList<SessionProfile?> accounts,
-            AccountLaunchTarget? homeDestination = null, string? homeCountry = null, bool exactRejoin = false,
+            AccountLaunchTarget? selectedDestination = null, bool exactRejoin = false,
             LaunchGroup? group = null)
         {
             if (_launchingAccounts)
                 return;
             _launchingAccounts = true;
             LaunchActions.IsEnabled = false;
+            using var operation = CancellationTokenSource.CreateLinkedTokenSource(DashboardClosed.Token);
+            _serverOperation = operation;
             var locations = new List<ServerLocation>();
             var failures = new List<string>();
             try
             {
-                string? country = exactRejoin ? null : homeCountry ?? SelectedServerCountry;
-                var destination = homeDestination ?? AccountLaunchTarget.Parse(group?.Destination ?? AccountDestination.Text);
-                if (country is not null)
+                string? country = exactRejoin ? null : SelectedServerCountry;
+                var destination = selectedDestination ?? AccountLaunchTarget.Parse(group?.Destination ?? AccountDestination.Text);
+                if (country is not null && accounts.Any(profile =>
+                    (destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0)).IsHome))
                 {
-                    var homeAccounts = accounts.Where(profile =>
-                        (destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0)).IsHome).ToArray();
-                    foreach (var profile in homeAccounts)
-                        OpenFilteredHome(profile, country, group);
-                    if (homeAccounts.Length > 0)
-                    {
-                        accounts = accounts.Except(homeAccounts).ToArray();
-                        if (accounts.Count == 0)
-                        {
-                            AccountStatus.Text = "Choose games in the filtered Roblox Home window.";
-                            return;
-                        }
-                    }
+                    ShowGameFinder(new(accounts, group));
+                    AccountStatus.Text = "Choose a game here in Finstrap to apply your server country.";
+                    return;
                 }
 
+                _pendingGameLaunch = null;
                 await RefreshSessionsAsync();
                 accounts = accounts.Where(p => p is null || !ActiveSessions.Any(s => s.UserId == p.UserId)).ToArray();
                 if (accounts.Count == 0)
@@ -144,6 +156,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 Queue.Begin(accounts.Where(p => p is not null).Select(p => p!.UserId));
                 _retryRejoinTarget = exactRejoin ? destination : null;
                 _retryGroup = group;
+                _retryDestination = selectedDestination;
                 AccountStatus.Text = "Preparing Roblox…";
                 if (destination is not null && country is null)
                     destination = await destination.ResolveFriendAsync();
@@ -152,30 +165,22 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 foreach (var profile in accounts)
                 {
                     var target = destination ?? new AccountLaunchTarget(PlaceId: profile?.PlaceId ?? 0);
-                    launches.Add(async () => await Dispatcher.InvokeAsync(() =>
+                    launches.Add(async () => await await Dispatcher.InvokeAsync(async () =>
                     {
-                        AccountStatus.Text = profile is null ? "Opening Roblox sign-in…"
-                            : $"Launching Roblox for {profile.Name}…";
-                        if (Queue.CancelRemaining) return null;
-                        if (profile is not null) Queue.Set(profile.UserId, AccountLaunchState.SignInNeeded);
-                        while (!Queue.CancelRemaining)
+                        if (Queue.CancelRemaining)
+                            return null;
+                        try
                         {
-                            try
-                            {
-                                var result = SignIn(profile, target, country, locations, failures);
-                                if (profile is not null) Queue.Set(profile.UserId, result is null ? AccountLaunchState.Cancelled : AccountLaunchState.Starting);
-                                return result;
-                            }
-                            catch (Exception ex) when (ex is IOException or InvalidOperationException)
-                            {
-                                var choice = Frontend.ShowMessageBox(ex.Message + "\nYes: retry. No: skip. Cancel: stop remaining launches.", MessageBoxImage.Warning, MessageBoxButton.YesNoCancel);
-                                if (choice == MessageBoxResult.Yes) continue;
-                                if (profile is not null) Queue.Set(profile.UserId, AccountLaunchState.Failed);
-                                if (choice == MessageBoxResult.Cancel) Queue.CancelRemaining = true;
-                                return null;
-                            }
+                            return await PrepareLaunchAsync(profile, target, country, locations, operation.Token);
                         }
-                        return null;
+                        catch (OperationCanceledException) when (operation.IsCancellationRequested) { return null; }
+                        catch (Exception ex)
+                        {
+                            failures.Add($"{profile?.Name ?? "Roblox"}: {DescribeLaunchFailure(ex)}");
+                            if (profile is not null)
+                                Queue.Set(profile.UserId, AccountLaunchState.Failed);
+                            return null;
+                        }
                     }));
                 }
 
@@ -189,6 +194,8 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     ? exactRejoin ? "Roblox is opening the recorded server. It must still be active and accessible."
                         : started == 1 ? "Roblox started." : $"Started {started} Roblox clients."
                     : $"Started {started} of {accounts.Count} requested Roblox clients.");
+                if (operation.IsCancellationRequested)
+                    AccountStatus.Text += " Remaining launches cancelled.";
                 if (locations.Count > 0)
                     AccountStatus.Text += "\nSelected server locations (estimated): " + string.Join("; ", locations.Distinct().Select(location => location.ToString()).Distinct());
                 if (failures.Count > 0)
@@ -206,6 +213,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
             finally
             {
                 Queue.Finish();
+                _serverOperation = null;
                 _launchingAccounts = false;
                 LaunchActions.IsEnabled = true;
                 await RefreshSessionsAsync();
@@ -213,21 +221,48 @@ namespace Bloxstrap.UI.Elements.Dialogs
             }
         }
 
-        private RobloxAccountLaunch? SignIn(SessionProfile? profile, AccountLaunchTarget target, string? country, List<ServerLocation> locations, List<string> failures)
+        private async Task<RobloxAccountLaunch?> PrepareLaunchAsync(SessionProfile? profile, AccountLaunchTarget target,
+            string? country, List<ServerLocation> locations, CancellationToken token)
         {
-            var dialog = new AccountSignInDialog(profile, target, (id, name, key) => SaveVerifiedAccount(id, name, key, target), country: country) { Owner = this };
-            if (dialog.ShowDialog() != true || dialog.Result is not { } launch)
+            if (profile is null)
             {
-                if (dialog.FailureReason is { } reason)
-                    failures.Add(reason);
-                return null;
+                AccountStatus.Text = "Sign in to link your Roblox account.";
+                profile = PromptToLinkAccount(null, target);
+                if (profile is null)
+                    return null;
+            }
+            if (ActiveSessions.Any(session => session.UserId == profile.UserId))
+                throw new FormatException("This account already has a tracked Roblox session.");
+
+            AccountStatus.Text = $"Verifying {profile.Name}…";
+            using var client = await OpenLinkedClientAsync(profile, token);
+            var session = new RobloxAccountSession(client);
+            var identity = await VerifyLinkedAccountAsync(session, profile, token);
+            ServerLocation? location = null;
+            if (country is not null)
+            {
+                string region = (ServerCountry.SelectedItem as CountryChoice)?.Name ?? country;
+                AccountStatus.Text = $"Finding a public server in {region} for {profile.Name}…";
+                location = await new ServerRegionLookup(App.HttpClient, session, Datacenters)
+                    .FindAsync(target, country, token, progress =>
+                    {
+                        if (!token.IsCancellationRequested)
+                            AccountStatus.Text = $"Finding a public server in {region} for {profile.Name}… " +
+                                $"{progress.Checked} checked, {progress.Located} located.";
+                    });
+                target = target with { JobId = location.JobId.ToString("D") };
+                AccountStatus.Text = $"Found an estimated match in {location}. Opening Roblox for {profile.Name}…";
+            }
+            else
+            {
+                target = await session.ResolveShareAsync(target, token);
             }
 
-            if (ActiveSessions.Any(session => session.UserId == launch.UserId))
-                return null;
-            if (dialog.Location is { } location)
+            string ticket = await session.GetTicketAsync(token);
+            if (location is not null)
                 locations.Add(location);
-            return launch;
+            Queue.Set(profile.UserId, AccountLaunchState.Starting);
+            return new RobloxAccountLaunch(identity.Id, identity.Name, profile.LaunchProfileKey!, ticket, target, location);
         }
 
         private void SaveVerifiedAccount(long userId, string username, string profileKey, AccountLaunchTarget target)
