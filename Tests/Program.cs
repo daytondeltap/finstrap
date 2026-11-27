@@ -12,6 +12,17 @@ Directory.CreateDirectory(Paths.Base);
 try
 {
     await CheckServerRegionsAsync(Check);
+    using (var catalog = new HttpClient(new ScriptedHandler((request, _) =>
+    {
+        Check(request.RequestUri?.Host == "apis.roblox.com" && request.RequestUri.Query.Contains("Bee%20Swarm%20%26%20More"),
+            "native game search encodes the game name on Roblox's API host");
+        return Json("""{"searchResults":[{"contentGroupType":"User","contents":[{"name":"A user","rootPlaceId":1}]},{"contentGroupType":"Game","contents":[{"name":"Bee Swarm Simulator","rootPlaceId":1537690962},{"name":"Duplicate","rootPlaceId":1537690962},{"name":"Ad","rootPlaceId":12,"isSponsored":true},{"name":"Invalid","rootPlaceId":0}]}]}""");
+    })))
+    {
+        var games = await new RobloxGameSearch(catalog).SearchAsync("Bee Swarm & More", default);
+        Check(games.SequenceEqual(new[] { new RobloxGame(1537690962, "Bee Swarm Simulator") }),
+            "native search returns unique unsponsored experiences by root place");
+    }
     LocalModPackChecks.Run(Paths.Base, Check);
     BuildAndRejoinChecks.Run(Paths.Base, Check);
     var fit = WindowLayoutMath.Fit(.75,.9,.5,.5,-1920,0,1920,1080);
@@ -21,7 +32,7 @@ try
     using (var stop = new CancellationTokenSource())
     using (var self = Process.GetCurrentProcess())
     {
-        var snapshot = new SessionSnapshot(self.Id,self.StartTime.ToUniversalTime().Ticks,123,true,456);
+        var snapshot = new SessionSnapshot(self.Id,self.StartTime.ToUniversalTime().Ticks,123,true,456,RegionalJoin.Matched,"SG");
         var server = SessionChannel.ServeAsync(self.Id, () => snapshot,stop.Token);
         var received = await SessionChannel.ReadAsync(self.Id,default);
         Check(received == snapshot,"watcher channel roundtrip preserves verified process and account identity");
@@ -213,10 +224,23 @@ static async Task CheckServerRegionsAsync(Action<bool, string> check)
     }));
 
     var lookup = new ServerRegionLookup(publicClient, new RobloxAccountSession(accountClient), new RobloxDatacenters(publicClient));
-    var found = await lookup.FindAsync(new(PlaceId: 123), "SG", default);
+    var progress = new List<ServerSearchProgress>();
+    var found = await lookup.FindAsync(new(PlaceId: 123), "SG", default, progress.Add);
     check(found.JobId == candidate && found.City == "Singapore" && probes == jobs.Length,
         "regional search reaches later pages and skips closed, full, conflicting and unavailable servers");
     check(directoryDownloads == 1, "datacenter map is reused across probes");
+    check(progress.Last().Checked == probes && progress.Last().Located < probes && progress.Last().Located > 0,
+        "lookup reports completed checks and how many servers had reliable locations");
+    using (var camelCase = new HttpClient(new ScriptedHandler((_, _) => Json(JsonSerializer.Serialize(new
+    {
+        joinScript = JsonSerializer.Serialize(new { placeId = 123, gameId = candidate, dataCenterId = 2 })
+    })))))
+    {
+        var metadata = new RobloxAccountSession(camelCase);
+        check((await metadata.GetServerMetadataAsync(123, candidate, default))?.DatacenterId == 2 &&
+            await metadata.GetServerMetadataAsync(123, Guid.NewGuid(), default) is null,
+            "join metadata accepts encoded scripts and verifies the returned server instance");
+    }
 
     var launchUrl = new AccountLaunchTarget(PlaceId: 123, JobId: found.JobId.ToString("D")).GetPlaceLauncherUrl();
     check(launchUrl!.Contains("RequestGameJob"), "regional launch uses an exact instance instead of matchmaking");

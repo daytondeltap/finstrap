@@ -14,6 +14,7 @@ namespace Bloxstrap
         private readonly CancellationTokenSource _sessionEnded = new();
         private volatile CancellationTokenSource? _playback;
         private bool _keepAwake;
+        private volatile RegionalJoin _regionalJoin;
         private string? _macroOverride;
 
         public IntPtr GetSessionWindow()
@@ -112,13 +113,13 @@ namespace Bloxstrap
                 };
                 if (_watcherData.ExpectedServerJobId is Guid expectedJob)
                 {
+                    _regionalJoin = RegionalJoin.Checking;
                     void CheckFirstJoin(object? sender, EventArgs args)
                     {
                         ActivityWatcher.OnGameJoin -= CheckFirstJoin;
-                        bool matched = Guid.TryParse(ActivityWatcher.Data.JobId, out Guid joined) && expectedJob == joined;
-                        App.Logger.WriteLine("RegionMatch", matched
-                            ? $"Joined selected server (estimated country {_watcherData.ExpectedServerCountry})."
-                            : $"Roblox joined a different server than selected (expected country {_watcherData.ExpectedServerCountry}).");
+                        _regionalJoin = !Guid.TryParse(ActivityWatcher.Data.JobId, out Guid joined) || joined == Guid.Empty
+                            ? RegionalJoin.Unverified : expectedJob == joined ? RegionalJoin.Matched : RegionalJoin.Different;
+                        App.Logger.WriteLine("RegionMatch", $"Regional launch result: {_regionalJoin} (estimated country {_watcherData.ExpectedServerCountry}).");
                     }
                     ActivityWatcher.OnGameJoin += CheckFirstJoin;
                 }
@@ -196,7 +197,8 @@ namespace Bloxstrap
             Task channel = SessionChannel.ServeAsync(ProcessId, () => new SessionSnapshot(ProcessId,
                 _watcherData.ProcessStartTimeUtc, ActivityWatcher?.InGame == true && _watcherData.AccountUserId > 0 && ActivityWatcher.Data.UserId != _watcherData.AccountUserId
                     ? 0 : _watcherData.AccountUserId > 0 ? _watcherData.AccountUserId : ActivityWatcher?.Data.UserId ?? 0,
-                ActivityWatcher?.InGame == true, ActivityWatcher?.InGame == true ? ActivityWatcher.Data.PlaceId : 0), _sessionEnded.Token);
+                ActivityWatcher?.InGame == true, ActivityWatcher?.InGame == true ? ActivityWatcher.Data.PlaceId : 0,
+                _regionalJoin, _watcherData.ExpectedServerCountry), _sessionEnded.Token);
             Task exited = _player!.WaitForExitAsync();
             Task activity = TrackActivityAsync();
             Task antiIdle = App.Settings.Prop.ForegroundAntiIdle ? RunAntiIdleAsync() : Task.CompletedTask;

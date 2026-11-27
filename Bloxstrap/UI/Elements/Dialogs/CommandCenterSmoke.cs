@@ -37,6 +37,19 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 Check(window.Cards.Count() == 2, "Account cards did not load.");
                 window.ServerCountry.SelectedValue = "SG";
                 Check(window.SelectedServerCountry == "SG" && App.Settings.LastSaveSucceeded, "Server country selection was not saved.");
+                window.AccountDestination.Text = "0";
+                await window.LaunchAccountsAsync(new[] { first });
+                Check(window.GameFinder.Visibility == Visibility.Visible && window._pendingGameLaunch is not null,
+                    "A filtered Home launch did not open the game finder in the dashboard.");
+                Check(Application.Current.Windows.OfType<AccountSignInDialog>().Count() == 0,
+                    "A filtered Home launch opened a separate sign-in window.");
+                window.CloseGameFinder_Click(window, new RoutedEventArgs());
+                window.GameQuery.Text = "1537690962";
+                window.ShowGameFinder();
+                await window.SearchGamesAsync();
+                await window.UseSelectedGameAsync();
+                Check(window.AccountDestination.Text == "1537690962" && window.GameFinder.Visibility == Visibility.Collapsed,
+                    "The in-app game finder did not select the entered place ID.");
                 var persisted = new JsonManager<Bloxstrap.Models.Persistable.Settings>();
                 Check(persisted.Load() && persisted.Prop.PreferredServerCountry == "SG", "Server country was not restored from settings.");
                 window.ServerCountry.SelectedValue = "";
@@ -46,6 +59,7 @@ namespace Bloxstrap.UI.Elements.Dialogs
                 var savedSettings = new JsonManager<Models.Persistable.Settings>();
                 Check(savedSettings.Load() && savedSettings.Prop.SessionProfiles.Single(p => p.UserId == first.UserId).LaunchProfileKey == profileKey,
                     "A verified account must be saved before requesting its launch ticket.");
+                await VerifyBackgroundAccountProfileAsync(window, first);
                 foreach (var card in window.Cards) window.AccountsList.SelectedItems.Add(card);
                 window.GroupName.Text = "Smoke group";
                 window.GroupChannel.Text = "Production";
@@ -102,13 +116,45 @@ namespace Bloxstrap.UI.Elements.Dialogs
                     encoder.Save(output);
                 }
 
-                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: mod pack imported, previewed and saved, session switches persisted and reloaded, Roblox build pinned and cleared, verified account saved, empty rejoin checked, group and channel saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
+                File.WriteAllText(Path.Combine(directory, "result.txt"), "PASS: mod pack imported, previewed and saved, session switches persisted and reloaded, Roblox build pinned and cleared, filtered Home stays in the dashboard, saved account profile opens without navigation and stays isolated, empty rejoin checked, group and channel saved, accounts reordered, queue cancelled, dark and light themes rendered with readable controls.");
             }
             finally
             {
                 App.Settings.Prop.Theme = Enums.Theme.Dark;
                 window.Close();
             }
+        }
+
+        private static async Task VerifyBackgroundAccountProfileAsync(LaunchMenuDialog window, SessionProfile first)
+        {
+            var second = new SessionProfile { Name = "Unlinked test account", LaunchProfileKey = Guid.NewGuid().ToString("N") };
+            using (var seed = new Microsoft.Web.WebView2.Wpf.WebView2())
+            {
+                window.AccountSessionHost.Children.Add(seed);
+                try
+                {
+                    await RobloxWebProfile.InitializeAsync(seed, first.LaunchProfileKey!, default);
+                    var manager = seed.CoreWebView2.CookieManager;
+                    var cookie = manager.CreateCookie(".ROBLOSECURITY", "test-cookie", ".roblox.com", "/");
+                    cookie.IsSecure = true;
+                    cookie.Expires = DateTime.UtcNow.AddMinutes(10);
+                    manager.AddOrUpdateCookie(cookie);
+                    if (seed.Source is { AbsoluteUri: not "about:blank" })
+                        throw new InvalidOperationException("The saved account profile navigated to a web page.");
+                }
+                finally { window.AccountSessionHost.Children.Remove(seed); }
+            }
+
+            using var linked = await window.OpenLinkedClientAsync(first, default);
+            try
+            {
+                using var other = await window.OpenLinkedClientAsync(second, default);
+            }
+            catch (FormatException ex) when (ex.Message.Contains("Reconnect"))
+            {
+                return;
+            }
+            throw new InvalidOperationException("A different WebView profile could read the linked account cookie.");
         }
 
         private static void VerifyRobloxVersionsPage()

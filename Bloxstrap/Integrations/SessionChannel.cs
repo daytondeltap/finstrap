@@ -2,7 +2,9 @@ using System.IO.Pipes;
 
 namespace Bloxstrap.Integrations
 {
-    internal sealed record SessionSnapshot(int ProcessId, long StartedUtc, long UserId, bool InGame, long PlaceId);
+    internal enum RegionalJoin { None, Checking, Matched, Different, Unverified }
+    internal sealed record SessionSnapshot(int ProcessId, long StartedUtc, long UserId, bool InGame, long PlaceId,
+        RegionalJoin RegionJoin = RegionalJoin.None, string? EstimatedCountry = null);
 
     internal static class SessionChannel
     {
